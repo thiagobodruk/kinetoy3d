@@ -2,7 +2,8 @@
 // PNG renders of the character from fixed camera angles.
 //
 //   npm run render -- [--url http://localhost:5178] [--views front,side,back,3q]
-//                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5] [--actors 3]
+//                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5]
+//                     [--actors 3 | --cast squid,kelp]
 //                     [--name prefix] [--out renders] [--size 900x1200] [--seed 1]
 //
 // Without --url it starts its own Vite dev server on a free port. The page runs in manual
@@ -30,6 +31,7 @@ const { values: args } = parseArgs({
     dist: { type: 'string', default: '4.2' },
     seed: { type: 'string', default: '1' },
     actors: { type: 'string', default: '1' },
+    cast: { type: 'string' },
   },
 });
 
@@ -56,17 +58,19 @@ try {
   const target = new URL(url);
   target.searchParams.set('manual', '');
   target.searchParams.set('seed', args.seed);
+  if (args.cast) target.searchParams.set('cast', args.cast);
   await page.goto(target.href);
   await Promise.race([page.waitForFunction(() => window.__app, null, { timeout: 180_000 }), failed]);
 
-  await page.evaluate(({ face, mode, gesture, wait, actors }) => {
+  await page.evaluate(async ({ face, mode, gesture, wait, actors, cast }) => {
     const app = window.__app;
-    for (let i = 1; i < actors; i++) app.addActor(); // the face/mode/gesture apply to the first (active) actor
+    // extra actors (face/mode/gesture apply to the active one, the first)
+    if (!cast) await Promise.all(Array.from({ length: actors - 1 }, () => app.addActor()));
     if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
     if (face) app.setFace(face);
     if (gesture) void app.active.gesture(gesture);
     app.advance(wait);
-  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait), actors: Number(args.actors) });
+  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait), actors: Number(args.actors), cast: args.cast });
 
   await mkdir(args.out, { recursive: true });
   for (const view of args.views.split(',')) {

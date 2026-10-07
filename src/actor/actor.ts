@@ -12,6 +12,8 @@ export class Actor {
   readonly rig: Rig;
   readonly animator: Animator;
   readonly motion: Motion;
+  /** Preset id it was created from, if any. */
+  preset?: string;
   private timers: { left: number; done: () => void }[] = [];
 
   constructor(readonly name: string, readonly type: string, instance: CharacterInstance, home = new THREE.Vector3()) {

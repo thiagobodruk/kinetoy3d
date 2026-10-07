@@ -17,3 +17,6 @@ renders/
 
 # build output
 dist/
+
+# models baked by tools/bake.ts (npm run build)
+public/models/

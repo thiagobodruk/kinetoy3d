@@ -4,9 +4,9 @@
 // Organic surfaces (skin, hair, beard, clothes, hands, sneakers) are SDF fields with
 // smooth union, polygonized with Surface Nets. Shirt and pants are SkinnedMeshes.
 import * as THREE from 'three';
-import type { BoneName, Bones, Rig } from '../rig/rig';
+import { HUMANOID_BONES, type BoneName, type Bones, type Rig } from '../rig/rig';
 import { ellipsoid, roundCone, torus, roundBox, union, subtract, intersect, custom, transform, polygonize, surfaceZ, field, type Node, type Rotation } from '../sdf';
-import { defineCharacter, type CharacterInstance } from './registry';
+import { defineCharacter, parseColor, type ColorValue } from './registry';
 
 const smoothstep = THREE.MathUtils.smoothstep;
 function smaxSoft(a: number, b: number, k: number): number {
@@ -215,7 +215,8 @@ function hairField() {
   return hair;
 }
 
-function beardField() {
+// `withHair`: the sideburns run up to the hairline; without hair they stop at the ear
+function beardField(withHair = true) {
   const items: Node[] = [];
   for (let i = 0; i <= 10; i++) {
     const t = i / 10;
@@ -230,7 +231,9 @@ function beardField() {
   for (const sx of [-1, 1]) {
     items.push(ellipsoid([sx * 0.15, 0.225, 0.255], [0.11, 0.09, 0.09]));
     // sideburn running in front of the ear up to the hair
-    items.push(roundCone([sx * 0.3, 0.29, 0.085], [sx * 0.31, 0.565, 0.025], 0.065, 0.05)); // rises until it tucks under the hair
+    items.push(withHair
+      ? roundCone([sx * 0.3, 0.29, 0.085], [sx * 0.31, 0.565, 0.025], 0.065, 0.05) // rises until it tucks under the hair
+      : roundCone([sx * 0.3, 0.29, 0.085], [sx * 0.31, 0.43, 0.05], 0.065, 0.052));
   }
   let beard = union(items, 0.07);
   // mustache: two drooping lobes + a bridge under the nose
@@ -331,20 +334,8 @@ function buildMouth(mats: Materials, surfaceField: Node) {
   return [make('interior', mats.mouth), make('teeth', mats.teeth), make('tongue', mats.tongue)];
 }
 
-function buildHead(mats: Materials, headBone: THREE.Bone, PALETTE: Palette) {
-  const g = new THREE.Group();
-  g.name = 'headGeo';
-
-  const skinGeo = polygonize(headSkinField(), { min: [-0.48, -0.08, -0.4], max: [0.48, 0.84, 0.55], cell: 0.0095, color: headSkinColor(PALETTE) });
-  const skin = new THREE.Mesh(skinGeo, mats.skinVC);
-  skin.name = 'headSkin';
-  g.add(skin);
-
-  const hair = new THREE.Mesh(polygonize(hairField(), { min: [-0.5, -0.02, -0.56], max: [0.5, 1.02, 0.4], cell: 0.011 }), mats.hair);
-  hair.name = 'hairMesh';
-  g.add(hair);
-
-  const beardParts = beardField();
+// beard + mustache (one mesh): hair color with a skin-colored patch around the mouth
+function buildBeard(mats: Materials, beardParts: ReturnType<typeof beardField>, PALETTE: Palette) {
   const hairC = new THREE.Color(PALETTE.hair), skinC = new THREE.Color(PALETTE.skin);
   const beardGeo = polygonize(beardParts.field, {
     min: [-0.46, -0.08, -0.15], max: [0.46, 0.6, 0.5], cell: 0.0075,
@@ -357,7 +348,35 @@ function buildHead(mats: Materials, headBone: THREE.Bone, PALETTE: Palette) {
   });
   const beard = new THREE.Mesh(beardGeo, mats.beardVC);
   beard.name = 'beardMesh';
-  g.add(beard);
+  return beard;
+}
+
+function buildHead(mats: Materials, headBone: THREE.Bone, PALETTE: Palette, parts: SquidParts) {
+  const g = new THREE.Group();
+  g.name = 'headGeo';
+
+  const skinGeo = polygonize(headSkinField(), { min: [-0.48, -0.08, -0.4], max: [0.48, 0.84, 0.55], cell: 0.0095, color: headSkinColor(PALETTE) });
+  const skin = new THREE.Mesh(skinGeo, mats.skinVC);
+  skin.name = 'headSkin';
+  g.add(skin);
+
+  if (parts.hair === 'classic') {
+    const hair = new THREE.Mesh(polygonize(hairField(), { min: [-0.5, -0.02, -0.56], max: [0.5, 1.02, 0.4], cell: 0.011 }), mats.hair);
+    hair.name = 'hairMesh';
+    g.add(hair);
+  }
+
+  // facial hair; the mouth is drawn on whatever surface surrounds it
+  const beardParts = beardField(parts.hair !== 'bald');
+  let mouthSurface: Node = headSkinField();
+  if (parts.facialHair === 'beard') {
+    g.add(buildBeard(mats, beardParts, PALETTE));
+    mouthSurface = beardParts.base;
+  } else if (parts.facialHair === 'mustache') {
+    const stache = new THREE.Mesh(polygonize(beardParts.stache, { min: [-0.24, 0.2, 0.26], max: [0.24, 0.38, 0.48], cell: 0.0075 }), mats.hair);
+    stache.name = 'mustacheMesh';
+    g.add(stache);
+  }
 
   // eyebrows: one mesh per side, pivoting at the inner end (to arch while talking)
   const brows = [1, -1].map((sx) => {
@@ -372,7 +391,7 @@ function buildHead(mats: Materials, headBone: THREE.Bone, PALETTE: Palette) {
     return m;
   });
 
-  const mouthMeshes = buildMouth(mats, beardParts.base);
+  const mouthMeshes = buildMouth(mats, mouthSurface);
   mouthMeshes.forEach((m) => g.add(m));
 
   // small, black, glossy eyes
@@ -514,7 +533,7 @@ function shoeField() {
 
 // ================= FACTORY =================
 function createMaterials(PALETTE: Palette) {
-  return {
+  const mats = {
     skin: vinyl(PALETTE.skin),
     skinVC: vinyl(0xffffff, { vertexColors: true }),
     hair: vinyl(PALETTE.hair, { roughness: 0.78, clearcoat: 0.05 }),
@@ -531,17 +550,59 @@ function createMaterials(PALETTE: Palette) {
     lip: vinyl(PALETTE.lip),
     teeth: vinyl(0xf7f4ee, { roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   };
+  for (const [key, m] of Object.entries(mats)) m.name = key; // meshes refer to materials by key
+  return mats;
 }
-type Materials = ReturnType<typeof createMaterials>;
+type MaterialKey = keyof ReturnType<typeof createMaterials>;
+type Materials = Record<MaterialKey, THREE.Material>;
+const MATERIAL_KEYS = Object.keys(createMaterials(BASE_PALETTE)) as MaterialKey[];
+
+/** Interchangeable parts, one option per slot. */
+export interface SquidParts {
+  hair: 'classic' | 'bald';
+  facialHair: 'beard' | 'mustache' | 'none';
+  /** chest print */
+  decal: 'star' | 'none';
+}
+export const DEFAULT_PARTS: SquidParts = { hair: 'classic', facialHair: 'beard', decal: 'star' };
+/** Every option of every slot (for validation and tools). */
+export const PART_OPTIONS: { [K in keyof SquidParts]: SquidParts[K][] } = {
+  hair: ['classic', 'bald'],
+  facialHair: ['beard', 'mustache', 'none'],
+  decal: ['star', 'none'],
+};
 
 export interface SquidOptions {
-  /** Color overrides (hex numbers), e.g. { shirt: 0x2b6cd6 }. */
-  palette?: Partial<Palette>;
+  /** Color overrides: '#rrggbb' strings or hex numbers, e.g. { shirt: '#2b6cd6' }. */
+  palette?: Partial<Record<keyof Palette, ColorValue>>;
+  parts?: Partial<SquidParts>;
 }
 
-export function createSquid({ palette = {} }: SquidOptions = {}): CharacterInstance {
-  const PALETTE: Palette = { ...BASE_PALETTE, ...palette };
-  const mats = createMaterials(PALETTE);
+function resolve({ palette = {}, parts = {} }: SquidOptions) {
+  const P = { ...BASE_PALETTE } as Palette;
+  for (const [key, value] of Object.entries(palette)) {
+    if (!(key in BASE_PALETTE)) throw new Error(`Unknown Squid palette color "${key}" (known: ${Object.keys(BASE_PALETTE).join(', ')})`);
+    P[key as keyof Palette] = parseColor(value!);
+  }
+  const S = { ...DEFAULT_PARTS, ...parts };
+  for (const [slot, value] of Object.entries(S)) {
+    const options = PART_OPTIONS[slot as keyof SquidParts] as string[] | undefined;
+    if (!options) throw new Error(`Unknown Squid part slot "${slot}" (known: ${Object.keys(PART_OPTIONS).join(', ')})`);
+    if (!options.includes(value)) throw new Error(`Unknown Squid ${slot} "${value}" (options: ${options.join(', ')})`);
+  }
+  return { PALETTE: P, parts: S };
+}
+
+/** Real materials for these options. */
+export function squidMaterials(options: SquidOptions = {}) { return createMaterials(resolve(options).PALETTE); }
+
+/**
+ * Builds the model: geometry, skeleton and hierarchy. Pure (no DOM, no GPU), so it can run in
+ * a Web Worker or in Node. Meshes carry placeholder materials named after the material keys.
+ */
+export function buildSquid(options: SquidOptions = {}): THREE.Group {
+  const { PALETTE, parts } = resolve(options);
+  const mats = Object.fromEntries(MATERIAL_KEYS.map((k) => [k, new THREE.MeshBasicMaterial({ name: k })])) as unknown as Materials;
 
   const root = new THREE.Group();
   root.name = 'Squid';
@@ -571,7 +632,7 @@ export function createSquid({ palette = {} }: SquidOptions = {}): CharacterInsta
 
 
   // star on the chest, resting on the torso surface
-  {
+  if (parts.decal === 'star') {
     const sx = 0, sy = 0.86; // chest center, at sleeve height
     const z = surfaceZ(torso, sx, sy, 0.5, 0);
     const e = 0.002;
@@ -694,13 +755,32 @@ export function createSquid({ palette = {} }: SquidOptions = {}): CharacterInsta
     }
   }
 
-  const { eyes, mouthMeshes, brows } = buildHead(mats, bones.head, PALETTE);
+  buildHead(mats, bones.head, PALETTE, parts);
 
   root.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   // arm skin: no self-shadowing (avoids shadow lines at the elbow/wrist joints)
   root.traverse((o) => { if (/^(upperArm|armMesh)/.test(o.name)) o.receiveShadow = false; });
-  const rig: Rig = { bones, face: { eyes, mouth: mouthMeshes, brows }, fingers: true };
-  return { object: root, rig };
+  return root;
 }
 
-defineCharacter<SquidOptions>({ name: 'squid', create: createSquid, ui: { label: 'Squid', icon: 'user' } });
+/** Finds the rig parts in a built (or deserialized) Squid. */
+export function squidRig(root: THREE.Object3D): Rig {
+  const find = <T extends THREE.Object3D>(name: string) => root.getObjectByName(name) as T | undefined;
+  const bones = Object.fromEntries(HUMANOID_BONES.map((n) => [n, find<THREE.Bone>(n)])) as Bones;
+  const some = <T extends THREE.Object3D>(names: string[]) => names.map((n) => find<T>(n)).filter((o): o is T => !!o);
+  return {
+    bones,
+    face: {
+      eyes: some(['eyeR', 'eyeL']),
+      mouth: some<THREE.Mesh>(['mouth_interior', 'mouth_teeth', 'mouth_tongue']),
+      brows: some<THREE.Mesh>(['browL', 'browR']),
+    },
+    fingers: true,
+  };
+}
+
+defineCharacter<SquidOptions>({
+  name: 'squid', build: buildSquid, materials: squidMaterials, rig: squidRig,
+  accent: (o) => `#${resolve(o).PALETTE.shirt.toString(16).padStart(6, '0')}`,
+  ui: { label: 'Squid', icon: 'user' },
+});

@@ -4,7 +4,9 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #f3f4f6; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
 canvas { display: block; }
 #loading { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
-#loading.over { background: rgba(243, 244, 246, .6); } /* over the running scene (adding an actor) */
+/* while adding an actor: a small pill at the top, the scene keeps running */
+#loading.toast { inset: 16px auto auto 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
 
 /* HUD: a single slim toolbar of icon buttons, grouped by thin dividers */
 #hud { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content;

@@ -12,9 +12,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsx tools/bake.ts && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "bake": "tsx tools/bake.ts",
     "render": "tsx tools/render.ts",
     "diff": "tsx tools/diff.ts"
   },

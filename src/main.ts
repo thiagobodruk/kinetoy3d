@@ -4,16 +4,18 @@
 // URL parameters (used by tools/render.ts):
 //   ?seed=N   repeatable random choices (blinks, glances, talk)
 //   ?manual   no real-time loop; time only moves through __app.advance(seconds)
+//   ?cast=a,b actors to start with (preset ids from content/characters/)
 import '@phosphor-icons/web/regular/style.css';
 import './library';
-import './characters/squid';
+import './characters';
 import type { Actor } from './actor/actor';
 import { Cast } from './actor/cast';
 import { MODES, type Mode } from './actor/motion';
 import { expressions } from './animation/expressions';
 import { gestures } from './animation/gestures';
 import { KeyboardControl } from './behaviors/keyboard-control';
-import { BASE_PALETTE, type Palette } from './characters/squid';
+import { characters } from './characters/registry';
+import { presets, getPreset } from './characters/presets';
 import { CameraRig, type ViewName } from './core/camera';
 import { Keyboard } from './core/keyboard';
 import { setSeed } from './core/random';
@@ -24,9 +26,6 @@ const params = new URLSearchParams(location.search);
 if (params.has('seed')) setSeed(Number(params.get('seed')));
 
 const loading = document.getElementById('loading')!;
-// lets the loading screen paint before a (blocking) model generation
-const nextPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-await nextPaint();
 
 const stage = new Stage(document.body, { manual: params.has('manual') });
 const cameraRig = new CameraRig(stage.camera, stage.renderer.domElement);
@@ -34,28 +33,23 @@ const keyboardControl = new KeyboardControl(new Keyboard(), cameraRig);
 const cast = new Cast(stage.scene);
 const active = () => cast.active!;
 
-// Squid variations for the actors added from the HUD (the first one is the original)
-const VARIATIONS: Partial<Palette>[] = [
-  {},
-  { shirt: 0x2b6cd6, pants: 0x2b2f38, skin: 0xd9956c, hair: 0x3a2a22 },
-  { shirt: 0x2f9e5b, pants: 0x7a6a4f, skin: 0xb9774f, hair: 0x1f1b18 },
-  { shirt: 0xf2b630, pants: 0x1d275a, skin: 0x8d5a3b, hair: 0xd9d4cc },
-];
 const colors = new Map<string, string>();
-function addActor(): Actor {
-  const palette = VARIATIONS[cast.actors.length % VARIATIONS.length];
-  const actor = cast.add('squid', { palette });
-  colors.set(actor.name, `#${(palette.shirt ?? BASE_PALETTE.shirt).toString(16).padStart(6, '0')}`);
-  actor.motion.onModeChange((mode) => { if (actor === cast.active) hud?.showMode(mode); });
+/** Adds an actor from a preset (default: the next one in content/characters/). */
+async function addActor(id?: string): Promise<Actor> {
+  const preset = id ? getPreset(id) : presets[cast.actors.length % presets.length];
+  const actor = await cast.add({ ...preset, options: preset.options ?? {} });
+  colors.set(actor.name, characters.get(actor.type).accent?.(preset.options ?? {}) ?? '#6b7180');
+  actor.motion.onModeChange((mode) => { if (actor === cast.active) hud.showMode(mode); });
+  syncHud();
   return actor;
 }
-/** Adds an actor from the HUD, behind the loading screen, and makes it active. */
+/** Adds an actor from the HUD and makes it active; the scene keeps running meanwhile. */
+let adding = 0;
 async function addActorFromHud() {
-  loading.classList.add('over');
+  adding++;
+  loading.classList.add('toast');
   document.body.append(loading);
-  await nextPaint();
-  cast.select(addActor());
-  loading.remove();
+  try { cast.select(await addActor()); } finally { if (--adding === 0) loading.remove(); }
 }
 
 // ---------- actions (on the active actor) ----------
@@ -81,22 +75,23 @@ function reset() {
 }
 function select(name: string) { cast.select(cast.get(name)); }
 
-let hud: Hud;
-addActor();
-hud = new Hud(document.getElementById('hud')!,
+// the HUD stays hidden until the first actor is on stage
+const hudEl = document.getElementById('hud')!;
+hudEl.style.visibility = 'hidden';
+const hud = new Hud(hudEl,
   { modes: MODES, faces: expressions.list(), gestures: gestures.list() },
   {
     selectActor: select, addActor: () => void addActorFromHud(),
     mode: (m) => setMode(m as Mode), face: setFace, arm: playArm, view: setView, zoom: (f) => cameraRig.zoom(f), reset,
   });
-const syncHud = () => {
+function syncHud() {
+  if (!cast.active) return;
   hud.setActors(cast.actors.map((a) => ({ name: a.name, color: colors.get(a.name)! })));
   hud.showActor(active().name);
   hud.showMode(active().mode);
   hud.showFace(active().expression);
-};
+}
 cast.onChange(syncHud);
-syncHud();
 cameraRig.onUserOrbit(() => hud.showView(null)); // dragging leaves the preset views
 hud.showView('front');
 
@@ -136,6 +131,13 @@ stage.onUpdate((dt) => {
   stage.focusRadius = cast.bounds(stage.focus).radius; // the shadow covers every actor
 });
 stage.start();
+
+// first actors (?cast=id,id… or the first preset): the loading screen stays up until they're on stage
+const initial = params.get('cast')?.split(',') ?? [presets[0].id];
+const [first] = await Promise.all(initial.map((id) => addActor(id)));
+cast.select(first);
+hudEl.style.visibility = '';
+hud.showView('front');
 loading.remove();
 
 // deterministic render of a view, returned as a PNG data URL (used by tools/render.ts)
@@ -149,7 +151,9 @@ const app = {
   stage, scene: stage.scene, camera: stage.camera, renderer: stage.renderer, controls: cameraRig.controls, cast,
   /** The active actor. */
   get active() { return active(); },
-  setMode, setFace, reset, capture, select, addActor,
+  setMode, setFace, reset, capture, select,
+  /** Adds an actor from a preset id (default: the next preset); resolves when it's on stage. */
+  addActor,
   /** Advances time in fixed steps (for ?manual). */
   advance: (seconds: number) => stage.advance(seconds),
 };

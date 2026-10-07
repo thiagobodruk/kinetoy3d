@@ -23,6 +23,7 @@ Then open <http://localhost:5178>.
 | `npm run build` | Type-checks and builds the static site into `dist/` |
 | `npm run preview` | Serves the built `dist/` locally |
 | `npm run typecheck` | Runs the TypeScript compiler without emitting |
+| `npm run bake` | Pre-builds the character presets into `public/models/` (part of `build`) |
 | `npm run render` | Headless renders of the character (see [Tools](#tools)) |
 | `npm run diff` | Visual regression between two sets of renders |
 
@@ -43,7 +44,7 @@ The buttons are generated from the registered modes, expressions and gestures (s
 | **Camera** | View menu (Front / Side / Back / 3/4) · Zoom out · Zoom in · Reset | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
 | **Panel** | Collapse / expand | `H` |
 
-The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Adding an actor generates a Squid variation (a few seconds behind the loading screen).
+The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Adding an actor brings in the next character preset; the scene keeps running while it loads.
 
 **Reset** returns every actor to its home position, idle, with a neutral face and no gesture, and the camera to the front view.
 
@@ -54,14 +55,21 @@ The face, the arms and the actions are independent layers, so they can be combin
 ```
 .
 ├── index.html              # Page shell (the HUD is generated)
+├── content/
+│   └── characters/         # Character presets (JSON): type, palette, parts
 ├── src/
 │   ├── main.ts             # Demo app: wires the stage, cast, HUD and keyboard
 │   ├── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
 │   ├── rig/
 │   │   └── rig.ts          # Rig contract: canonical humanoid bones, face parts, capabilities
 │   ├── characters/
-│   │   ├── registry.ts     # Character types (defineCharacter)
-│   │   └── squid.ts        # Squid: skeleton, SDF fields, meshes, skinning, materials, palette
+│   │   ├── registry.ts     # Character types (defineCharacter), assembly, colors
+│   │   ├── presets.ts      # Loads content/characters/*.json
+│   │   └── squid.ts        # Squid: skeleton, SDF fields, parts, palette, materials, rig
+│   ├── model/
+│   │   ├── serialize.ts    # Model ⇄ binary (exact for workers, compact for baked files)
+│   │   ├── worker.ts       # Builds a character's geometry off the main thread
+│   │   └── loader.ts       # Baked file → Web Worker → main thread
 │   ├── actor/
 │   │   ├── actor.ts        # Actor: model + rig + animator + motion; async actions
 │   │   ├── motion.ts       # Modes: idle, walk in place, circle, dance, free, walkTo
@@ -87,6 +95,7 @@ The face, the arms and the actions are independent layers, so they can be combin
 │       ├── hud.ts          # Builds the toolbar from the registries; shows the active state
 │       └── hud.css         # Page and toolbar styles (desktop toolbar, mobile trays)
 ├── tools/
+│   ├── bake.ts             # Pre-builds the presets into public/models/
 │   ├── render.ts           # Deterministic headless renders through Chrome (Playwright)
 │   └── diff.ts             # Pixel diff between two sets of renders
 ├── .github/workflows/
@@ -113,19 +122,48 @@ The face, the arms and the actions are independent layers, so they can be combin
 
 ### `rig/` and `characters/`: models
 
-A character type builds a model and its **rig**, the contract the animation engine works with:
+A character type builds a model in two steps:
 
-- `bones`: the skeleton under the canonical humanoid names (`hips`, `spine`, `head`, `shoulderL`, `elbowL`, `fingersL`, `fingerTipsL`, `thumbL`, `legL`, `kneeL`, `footL` and the `R` side).
-- `face`: eye pivots (blink), mouth layers with the morph targets `0` smile · `1` open · `2` sad · `3` "O", and eyebrows. Any of them can be empty; the layers skip what's missing.
-- `fingers`: whether the fingers and thumbs can curl.
+1. **`build(options)`** makes the geometry, the skeleton and the hierarchy. It's pure (no DOM, no GPU), so it runs in a **Web Worker** or in Node. Meshes carry placeholder materials named after a material key.
+2. The page adds the real **`materials(options)`** and finds the **`rig(root)`**, the contract the animation engine works with:
+   - `bones`: the skeleton under the canonical humanoid names (`hips`, `spine`, `head`, `shoulderL`, `elbowL`, `fingersL`, `fingerTipsL`, `thumbL`, `legL`, `kneeL`, `footL` and the `R` side).
+   - `face`: eye pivots (blink), mouth layers with the morph targets `0` smile · `1` open · `2` sad · `3` "O", and eyebrows. Any of them can be empty; the layers skip what's missing.
+   - `fingers`: whether the fingers and thumbs can curl.
 
 ```ts
-defineCharacter({ name: 'squid', create: (options) => ({ object, rig }), ui: { label: 'Squid', icon: 'user' } });
+defineCharacter({ name: 'squid', build, materials, rig, accent, ui: { label: 'Squid', icon: 'user' } });
 ```
+
+**Loading.** `loadCharacter` never blocks the page: in production it downloads the model baked at build time (≈3.4 MB per Squid, about 0.2 s locally); otherwise it builds it in a pool of Web Workers (≈5 s per Squid, several in parallel) while the scene keeps running at full frame rate.
+
+**Model files.** `serialize.ts` flattens the object tree, geometry and skeleton into one binary. Worker transfers are exact. Baked files are compacted: repeated attributes are stored once, positions are quantized to 16 bits inside each mesh's box, normals, colors and skin weights become 16-bit integers, integer streams are delta-coded and the file is gzipped (13 MB → 3.4 MB). Renders from baked and generated models differ by a handful of pixels.
+
+### Character presets (`content/characters/*.json`)
+
+A preset is one character, ready to put on stage:
+
+```json
+{
+  "id": "kelp",
+  "name": "Kelp",
+  "type": "squid",
+  "options": {
+    "palette": { "shirt": "#2f9e5b", "pants": "#7a6a4f", "skin": "#b9774f", "hair": "#1f1b18" },
+    "parts": { "facialHair": "mustache" }
+  }
+}
+```
+
+Built-in presets: **Squid**, **Marlin**, **Kelp** and **Sunny**. Files load in name order; the first one is the actor the demo starts with. A preset with a mistake (unknown color, part or option) fails with a message that lists the valid values.
 
 ### `characters/squid.ts`: the Squid
 
-`createSquid({ palette })` builds the model; `palette` overrides any of the colors in `BASE_PALETTE` (skin, hair, shirt, pants, shoes…).
+| Option | Values |
+| --- | --- |
+| `palette` | Any of `skin`, `skinShade`, `nose`, `blush`, `lip`, `hair` (also beard and brows), `shirt`, `star`, `pants`, `shoe`, `sole`, `eye`, `mouth`, `tongue`, as `'#rrggbb'` |
+| `parts.hair` | `classic` · `bald` |
+| `parts.facialHair` | `beard` · `mustache` · `none` |
+| `parts.decal` | `star` · `none` (chest print) |
 
 - **Coordinates:** Y up, front along +Z, the character's left along +X. The total height is about 2.0 units.
 - **Skeleton (`BONES`):**
@@ -198,11 +236,12 @@ Icons are [Phosphor](https://phosphoricons.com/) names. Built-in content is in `
 
 ### `actor/`: actors and the cast
 
-An **Actor** is one character on the stage: its model and rig, an `Animator` and a `Motion` controller. The **Cast** holds every actor, places new ones at the next home position along X and tracks the active one.
+An **Actor** is one character on the stage: its model and rig, an `Animator` and a `Motion` controller. The **Cast** holds every actor, places new ones at the next home position along X and tracks the active one. `cast.add` loads the model without blocking (see [Loading](#rig-and-characters-models)); several adds can run at once.
 
 ```ts
-const squid = cast.add('squid');                         // the original
-const blue = cast.add('squid', { palette: { shirt: 0x2b6cd6 } });
+const squid = await cast.add({ type: 'squid' });                          // the original
+const blue = await cast.add({ type: 'squid', options: { palette: { shirt: '#2b6cd6' } } });
+const kelp = await cast.add({ ...getPreset('kelp') });                    // from a preset
 
 // immediate state
 squid.setMode('dance');            // idle · walkInPlace · circle · dance
@@ -226,6 +265,7 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | --- | --- |
 | `?seed=N` | Repeatable random choices (blinks, glances, talk syllables and gestures) |
 | `?manual` | No real-time loop; time only moves through `__app.advance(seconds)` |
+| `?cast=id,id` | Actors to start with (preset ids); default: the first preset |
 
 ### Debug hook
 
@@ -237,7 +277,8 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | `scene`, `camera`, `controls`, `renderer` | The Three.js scene objects |
 | `cast` | The cast (`cast.actors`, `cast.add`, `cast.select`) |
 | `active` | The active actor |
-| `setMode`, `setFace`, `reset`, `select(name)`, `addActor()` | HUD actions |
+| `setMode`, `setFace`, `reset`, `select(name)` | HUD actions |
+| `addActor(presetId?)` | Adds an actor (async); default: the next preset |
 | `capture(azimuthDeg, { dist, height, target })` | Renders a fixed view and returns it as a PNG data URL |
 | `advance(seconds)` | Advances time in fixed 1/60 s steps and renders |
 
@@ -252,9 +293,10 @@ npm run render -- --name smile --face smile --views front,3q
 npm run render -- --name dance --mode dance --wait 1.2
 npm run render -- --name wave --gesture wave --wait 0.8 --views 0,45,120
 npm run render -- --name trio --actors 3 --mode dance --wait 1
+npm run render -- --name kelp --cast kelp --face smile
 ```
 
-Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--actors` (how many actors; the options apply to the first), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
+Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--actors` (how many actors; the options apply to the first), `--cast` (preset ids to put on stage), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
 
 **`diff`** compares two sets of renders and writes images with the changed pixels in red. It exits with an error when more than 0.5% of a view changed.
 
@@ -267,14 +309,14 @@ npm run diff -- before after
 
 ## Deployment
 
-Every push to `main` runs [`deploy.yml`](.github/workflows/deploy.yml), which builds the site and publishes `dist/` to GitHub Pages. The build uses relative paths (`base: './'`), so it works from any subfolder.
+Every push to `main` runs [`deploy.yml`](.github/workflows/deploy.yml), which builds the site (including the baked models) and publishes `dist/` to GitHub Pages. The build uses relative paths (`base: './'`), so it works from any subfolder.
 
 ## Tech notes
 
 - **Stack:** TypeScript (strict), Vite, Three.js 0.160 (npm).
 - **Icons:** [Phosphor Icons](https://phosphoricons.com/) 2.1.1 (regular weight), bundled from npm.
-- **Load time:** the meshes are built when the page loads (the "Loading..." screen), about 4–5 s per Squid. The fine grids on the arms and hands account for most of that time.
-- **Git:** `renders/`, `dist/`, `node_modules/` and other local caches are ignored.
+- **Load time:** generating a Squid takes about 5 s (the fine grids on the arms and hands account for most of it), which is why production uses baked models and development uses Web Workers.
+- **Git:** `renders/`, `public/models/`, `dist/`, `node_modules/` and other local caches are ignored.
 
 ## License
 

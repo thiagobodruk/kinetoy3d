@@ -1,0 +1,9 @@
+{
+  "id": "kelp",
+  "name": "Kelp",
+  "type": "squid",
+  "options": {
+    "palette": { "shirt": "#2f9e5b", "pants": "#7a6a4f", "skin": "#b9774f", "hair": "#1f1b18" },
+    "parts": { "facialHair": "mustache" }
+  }
+}

@@ -3,6 +3,7 @@
 // more than one.
 import * as THREE from 'three';
 import { characters } from '../characters/registry';
+import { loadCharacter, type CharacterRef } from '../model/loader';
 import { Actor } from './actor';
 
 export type CastEvent = 'add' | 'select';
@@ -16,6 +17,7 @@ export class Cast {
   active: Actor | null = null;
   private listeners: ((event: CastEvent, actor: Actor) => void)[] = [];
   private ring: THREE.Mesh;
+  private slots = 0; // home positions handed out (adds may finish out of order)
 
   constructor(private scene: THREE.Scene) {
     this.ring = new THREE.Mesh(
@@ -29,12 +31,18 @@ export class Cast {
   onChange(fn: (event: CastEvent, actor: Actor) => void): void { this.listeners.push(fn); }
   private emit(event: CastEvent, actor: Actor): void { this.listeners.forEach((fn) => fn(event, actor)); }
 
-  /** Creates an actor of a registered character type at the next free home position. */
-  add(type: string, options?: unknown, name?: string): Actor {
-    const def = characters.get(type);
-    const n = this.actors.filter((a) => a.type === type).length;
-    name ??= (def.ui?.label ?? type) + (n ? ` ${n + 1}` : '');
-    const actor = new Actor(name, type, def.create(options), new THREE.Vector3(slotX(this.actors.length), 0, 0));
+  /**
+   * Adds an actor at the next free home position. The model is loaded without blocking the
+   * page (baked file or Web Worker); several adds can run at once.
+   */
+  async add(ref: CharacterRef & { name?: string }): Promise<Actor> {
+    const def = characters.get(ref.type);
+    const slot = this.slots++;
+    const instance = await loadCharacter(ref);
+    let name = ref.name ?? def.ui?.label ?? ref.type;
+    for (let n = 2; this.actors.some((a) => a.name === name); n++) name = `${ref.name ?? def.ui?.label ?? ref.type} ${n}`;
+    const actor = new Actor(name, ref.type, instance, new THREE.Vector3(slotX(slot), 0, 0));
+    actor.preset = ref.id;
     this.actors.push(actor);
     this.scene.add(actor.object);
     this.emit('add', actor);

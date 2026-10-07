@@ -1,0 +1,8 @@
+{
+  "id": "marlin",
+  "name": "Marlin",
+  "type": "squid",
+  "options": {
+    "palette": { "shirt": "#2b6cd6", "pants": "#2b2f38", "skin": "#d9956c", "hair": "#3a2a22" }
+  }
+}
