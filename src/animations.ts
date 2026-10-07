@@ -2,6 +2,7 @@
 // state machine that crossfades between them through an AnimationMixer.
 import * as THREE from 'three';
 import type { BoneName, CharacterModel } from './character';
+import { random } from './core/random';
 
 const TAU = Math.PI * 2;
 
@@ -471,13 +472,13 @@ export class CharacterStateMachine {
         this.syllableTimer -= dt;
         if (this.syllableTimer <= 0) {
           // new syllable: 90–190 ms; some nearly closed (consonants)
-          this.syllableTimer = 0.09 + Math.random() * 0.1;
-          this.syllableTarget = Math.random() < 0.2 ? 0.05 : 0.35 + Math.random() * 0.65;
+          this.syllableTimer = 0.09 + random() * 0.1;
+          this.syllableTarget = random() < 0.2 ? 0.05 : 0.35 + random() * 0.65;
         }
         if (this.phraseTimer <= 0) {
           // end of phrase: short closed-mouth pause
-          this.phraseTimer = 1.2 + Math.random() * 1.8;
-          this.pauseTimer = 0.25 + Math.random() * 0.45;
+          this.phraseTimer = 1.2 + random() * 1.8;
+          this.pauseTimer = 0.25 + random() * 0.45;
         }
       }
       openTarget = this.syllableTarget;
@@ -508,8 +509,8 @@ export class CharacterStateMachine {
       this.browTimer -= dt;
       if (this.browTimer <= 0) {
         const up = this.browTarget === 0;
-        this.browTarget = up ? 0.6 + Math.random() * 0.4 : 0;
-        this.browTimer = up ? 0.35 + Math.random() * 0.35 : 0.6 + Math.random() * 1.2;
+        this.browTarget = up ? 0.6 + random() * 0.4 : 0;
+        this.browTimer = up ? 0.35 + random() * 0.35 : 0.6 + random() * 1.2;
       }
     } else {
       this.browTarget = 0;
@@ -548,9 +549,9 @@ export class CharacterStateMachine {
     L.timer -= dt;
     if (L.timer <= 0) {
       // sometimes glance to one side; otherwise return to center
-      const glance = L.tgt === 0 && Math.random() < 0.6;
-      L.tgt = glance ? (Math.random() < 0.5 ? -1 : 1) * (0.18 + Math.random() * 0.17) : 0;
-      L.timer = glance ? 1.2 + Math.random() * 1.6 : 2.5 + Math.random() * 3;
+      const glance = L.tgt === 0 && random() < 0.6;
+      L.tgt = glance ? (random() < 0.5 ? -1 : 1) * (0.18 + random() * 0.17) : 0;
+      L.timer = glance ? 1.2 + random() * 1.6 : 2.5 + random() * 3;
     }
     L.cur += (L.tgt - L.cur) * Math.min(1, dt * 2.5);
     const w = this.idleW;
@@ -576,19 +577,19 @@ export class CharacterStateMachine {
       g.timer -= dt;
       if (g.timer <= 0) {
         const dominant = g.sx < 0; // the right hand gestures more
-        const active = talking && Math.random() < (dominant ? 0.75 : 0.45);
+        const active = talking && random() < (dominant ? 0.75 : 0.45);
         g.tgt = active
           ? {
-              s: -(0.2 + Math.random() * 0.5),    // shoulder: arm forward
-              e: -(0.5 + Math.random() * 0.5),    // elbow: forearm rises (beyond rest)
-              o: 0.06 + Math.random() * 0.16,     // opens slightly sideways
-              t: 0.3 + Math.random() * 0.5,       // twists the forearm (palm up)
+              s: -(0.2 + random() * 0.5),    // shoulder: arm forward
+              e: -(0.5 + random() * 0.5),    // elbow: forearm rises (beyond rest)
+              o: 0.06 + random() * 0.16,     // opens slightly sideways
+              t: 0.3 + random() * 0.5,       // twists the forearm (palm up)
               w: 1,
             }
           : talking
             ? { s: -0.12, e: -0.35, o: 0.04, t: 0.1, w: 1 } // between gestures: arm slightly raised
             : { ...g.tgt, w: 0 };                 // not talking: back to idle/walk
-        g.timer = talking ? (active ? 0.6 + Math.random() * 0.8 : 0.4 + Math.random() * 0.6) : 0.3;
+        g.timer = talking ? (active ? 0.6 + random() * 0.8 : 0.4 + random() * 0.6) : 0.3;
       }
       const k = Math.min(1, dt * 5);
       for (const key of ['s', 'e', 'o', 't', 'w'] as const) g.cur[key] += (g.tgt[key] - g.cur[key]) * k;
@@ -623,7 +624,7 @@ export class CharacterStateMachine {
       if (this.blinkT >= d) {
         this.blinkT = -1;
         k = 1;
-        this.blinkTimer = 2 + Math.random() * 3;
+        this.blinkTimer = 2 + random() * 3;
       }
     }
     eyes.forEach((e) => { e.scale.y = Math.max(0.08, k * (1 - this.eyeSquint)); });

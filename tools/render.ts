@@ -3,9 +3,10 @@
 //
 //   npm run render -- [--url http://localhost:5178] [--views front,side,back,3q]
 //                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5]
-//                     [--name prefix] [--out evidence] [--size 900x1200]
+//                     [--name prefix] [--out evidence] [--size 900x1200] [--seed 1]
 //
-// Without --url it starts its own Vite dev server on a free port.
+// Without --url it starts its own Vite dev server on a free port. The page runs in manual
+// time (?manual) with a fixed seed, so the same arguments always give the same image.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -27,6 +28,7 @@ const { values: args } = parseArgs({
     out: { type: 'string', default: 'evidence' },
     size: { type: 'string', default: '900x1200' },
     dist: { type: 'string', default: '4.2' },
+    seed: { type: 'string', default: '1' },
   },
 });
 
@@ -50,16 +52,19 @@ try {
       if (r.status() >= 400 && !r.url().endsWith('/favicon.ico')) reject(new Error(`[http ${r.status()}] ${r.url()}`));
     });
   });
-  await page.goto(url);
+  const target = new URL(url);
+  target.searchParams.set('manual', '');
+  target.searchParams.set('seed', args.seed);
+  await page.goto(target.href);
   await Promise.race([page.waitForFunction(() => window.__app, null, { timeout: 180_000 }), failed]);
 
-  await page.evaluate(({ face, mode, gesture }) => {
+  await page.evaluate(({ face, mode, gesture, wait }) => {
     const app = window.__app;
     if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
     if (face) app.setFace(face as Parameters<typeof app.setFace>[0]);
     if (gesture) app.fsm.playArmAction(gesture);
-  }, { face: args.face, mode: args.mode, gesture: args.gesture });
-  await page.waitForTimeout(Number(args.wait) * 1000);
+    app.advance(wait);
+  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait) });
 
   await mkdir(args.out, { recursive: true });
   for (const view of args.views.split(',')) {

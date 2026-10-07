@@ -46,14 +46,24 @@ The face, the arms and the actions are independent layers, so they can be combin
 
 ```
 .
-├── index.html              # Page markup and HUD styles
+├── index.html              # Page markup (HUD toolbar)
 ├── src/
-│   ├── main.ts             # Scene setup (renderer, lights, camera), HUD, input and main loop
+│   ├── main.ts             # Demo app: wires the stage, character, HUD and keyboard together
 │   ├── character.ts        # Procedural model: skeleton, SDF fields, meshes, skinning, materials
 │   ├── animations.ts       # Procedural clips, arm gestures, facial layers and the state machine
-│   └── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
+│   ├── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
+│   ├── core/
+│   │   ├── stage.ts        # Renderer, scene, lights, ground and the frame loop (real-time or manual)
+│   │   ├── camera.ts       # Orbit camera: preset views, zoom steps, fixed shots for renders
+│   │   ├── keyboard.ts     # Held-key tracking
+│   │   └── random.ts       # Seedable random source for the animation layers
+│   ├── behaviors/
+│   │   └── locomotion.ts   # Idle, walk in place, walk in circle, dance and free (WASD) movement
+│   └── ui/
+│       ├── hud.ts          # Binds the toolbar buttons to actions and shows the active state
+│       └── hud.css         # Page and toolbar styles
 ├── tools/
-│   ├── render.ts           # Headless renders through Chrome (Playwright)
+│   ├── render.ts           # Deterministic headless renders through Chrome (Playwright)
 │   └── diff.ts             # Pixel diff between two sets of renders
 ├── .github/workflows/
 │   └── deploy.yml          # Builds and publishes the demo to GitHub Pages
@@ -120,23 +130,37 @@ The face, the arms and the actions are independent layers, so they can be combin
     - Each one blends in, overrides the arm pose while it plays and blends out.
     - Their poses are written as directions in torso space (`armQuats`): upper arm, forearm and palm.
 
+### Frame loop
+
+`Stage` runs every registered update callback in order and then renders. The demo registers a single callback that moves the character (`Locomotion`), feeds the result to the state machine, syncs the HUD and eases the camera. The key light and its shadow follow `stage.focus`.
+
+Time can run in real time (`requestAnimationFrame`) or be stepped manually with a fixed time step (`stage.advance(seconds)`). Together with the seedable random source, manual time makes a render depend only on its inputs.
+
+| URL parameter | Effect |
+| --- | --- |
+| `?seed=N` | Repeatable random choices (blinks, glances, talk syllables and gestures) |
+| `?manual` | No real-time loop; time only moves through `__app.advance(seconds)` |
+
 ### Debug hook
 
 `window.__app` exposes these objects to the browser console (and to the tools):
 
 | Name | What it is |
 | --- | --- |
+| `stage` | The stage (frame loop, lights) |
 | `scene`, `camera`, `controls`, `renderer` | The Three.js scene objects |
 | `character` | The character model |
 | `fsm` | The state machine |
+| `locomotion` | The movement controller |
 | `setMode`, `setFace`, `reset` | HUD actions |
 | `capture(azimuthDeg, { dist, height, target })` | Renders a fixed view and returns it as a PNG data URL |
+| `advance(seconds)` | Advances time in fixed 1/60 s steps and renders |
 
 ## Tools
 
 Both tools run locally; they aren't part of the published site. Renders go to `evidence/`, which is ignored by git.
 
-**`render`** opens the app in headless Chrome (it uses the Chrome installed on the machine), optionally sets a pose, and saves one PNG per view. Without `--url`, it starts its own Vite server.
+**`render`** opens the app in headless Chrome (it uses the Chrome installed on the machine), optionally sets a pose, advances time and saves one PNG per view. Without `--url`, it starts its own Vite server. The page runs with `?manual&seed=1`, so the same arguments always produce the same pixels.
 
 ```bash
 npm run render -- --name smile --face smile --views front,3q
@@ -144,7 +168,7 @@ npm run render -- --name dance --mode dance --wait 1.2
 npm run render -- --name wave --gesture wave --wait 0.8 --views 0,45,120
 ```
 
-Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds before capturing), `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
+Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
 
 **`diff`** compares two sets of renders and writes images with the changed pixels in red. It exits with an error when more than 0.5% of a view changed.
 
