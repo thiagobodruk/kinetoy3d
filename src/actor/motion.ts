@@ -1,12 +1,15 @@
 // Moves an actor around the stage and reports what it's doing to the body layer.
-//   idle · walkInPlace · circle (a fixed circle from home) · dance
+//   idle · walkInPlace · circle (a fixed circle from home) · stationary loops (dance, bow, lookAround)
 //   free (steered every frame, e.g. by the keyboard) · walkTo (walks to a point, then idles)
 //   turnTo (turns in place to a heading, then idles)
 import * as THREE from 'three';
 import type { MotionContext } from '../animation/animator';
 import type { UiMeta } from '../animation/registry';
 
-export type Mode = 'idle' | 'walkInPlace' | 'circle' | 'dance' | 'free' | 'walkTo' | 'turnTo';
+/** Modes that play a stationary looping body clip of the same name. */
+export const LOOPS = ['dance', 'bow', 'lookAround'] as const;
+export type LoopMode = (typeof LOOPS)[number];
+export type Mode = 'idle' | 'walkInPlace' | 'circle' | LoopMode | 'free' | 'walkTo' | 'turnTo';
 
 /** Modes offered in the HUD. */
 export const MODES: { name: Mode; ui: UiMeta }[] = [
@@ -14,6 +17,8 @@ export const MODES: { name: Mode; ui: UiMeta }[] = [
   { name: 'walkInPlace', ui: { label: 'Walk', icon: 'person-simple-walk' } },
   { name: 'circle', ui: { label: 'Walk in circle', icon: 'arrows-clockwise' } },
   { name: 'dance', ui: { label: 'Dance', icon: 'music-notes', key: 'KeyG' } },
+  { name: 'bow', ui: { label: 'Bow', icon: 'person-simple-tai-chi' } },
+  { name: 'lookAround', ui: { label: 'Look around', icon: 'binoculars' } },
 ];
 
 export const WALK_SPEED = 1.1;
@@ -132,6 +137,6 @@ export class Motion {
         this.turnToward(to, dt);
       }
     }
-    return { moving, speed, dancing: this.mode === 'dance' };
+    return { moving, speed, loop: (LOOPS as readonly string[]).includes(this.mode) ? this.mode : null };
   }
 }

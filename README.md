@@ -33,22 +33,21 @@ Then open <http://localhost:5178>.
 
 The HUD is a compact bar at the bottom center of the screen, with one button per group showing its active option. Clicking (or tapping) a group opens its options in a tray above the bar; picking an option or clicking outside closes it. Hover over a button to see its name and shortcut. The `‹` button collapses the bar into a small `›` button in the bottom-left corner. On phones the buttons are larger.
 
-Order: **Actions · Face · Arms** | **Camera · Actors · Scenes** | **Reset**.
+Order: **Actions · Face · Gestures** | **Camera · Scenes** | **Reset**.
 
 The buttons are generated from the registered modes, expressions and gestures (see [Adding expressions and gestures](#adding-expressions-and-gestures)).
 
 | Group | Buttons | Shortcuts |
 | --- | --- | --- |
 | **Scenes** | A menu with the scenes in `content/scenes/` | `Space` plays/pauses the open scene |
-| **Actors** | One button per actor (tinted with its shirt color) · Add actor | Click a character on the stage to make it active |
-| **Actions** | Idle · Walk (in place) · Walk in circle · Dance | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
-| **Face** | Neutral · Smile · Talk · Sad · Surprise | `Y` smile, `T` talk, `U` sad (each one toggles) |
-| **Arms** | Rest · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
+| **Actions** | Idle · Walk (in place) · Walk in circle · Dance · Bow · Look around | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
+| **Face** | Neutral · Smile · Talk · Sad · Surprise · Angry · Laugh · Scared | `Y` smile, `T` talk, `U` sad (each one toggles) |
+| **Gestures** | No gesture · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
 | **Camera** | Views (Front / Side / Back / 3/4) · Zoom out · Zoom in | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
 | **Reset** | Restarts the open scene, or resets the stage | |
 | **Panel** | Collapse / expand | `H` |
 
-The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Adding an actor brings in the next character preset; the scene keeps running while it loads.
+The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Click a character on the stage to make it active. The **Actors** group (one button per actor, add actor) is hidden for now, until scenes can be edited; `SHOW_ACTORS` in `src/ui/hud.ts` brings it back.
 
 **Scenes** open in a player above the toolbar: play/pause, restart, a timeline to scrub, and close. While a scene plays, its camera cues drive the camera until you drag to orbit; the keyboard doesn't steer the actors. Closing it leaves the actors on stage for free play.
 
@@ -219,7 +218,7 @@ An `Animator` drives one character by stacking layers. Every frame, each layer w
 
 - **Clips** are sampled by `sampleClip` as offsets over the `REST` pose, with harmonics that loop seamlessly.
 - **Gestures** return an `ArmPose` for time `t`: absolute rotations (`q`, `r`), finger and thumb curls, additive rotations (`add`) and a shoulder `lift`. Arm poses are usually written as directions in torso space with `armQuats(side, upperArm, forearm, palm)`.
-- **Expressions** are data: target weights for the face channels (`smile`, `sad`, `surprise`) plus flags (`talk`, `idleLife`).
+- **Expressions** are data: target weights for the face channels (`smile`, `sad`, `surprise`, `angry`, `laugh`, `fear`) plus flags (`talk`, `idleLife`).
 
 ### Adding expressions and gestures
 

@@ -28,19 +28,21 @@ export interface HudHandlers {
   addActor(): void;
   mode(mode: string): void;
   face(face: string): void;
-  /** gesture name, or REST_ARMS to return to the rest pose */
-  arm(name: string): void;
+  /** gesture name, or REST_GESTURE to return to the rest pose */
+  gesture(name: string): void;
   view(view: ViewName): void;
   zoom(factor: number): void;
   reset(): void;
 }
 
 export const ZOOM_STEP = 1.25;
-export const REST_ARMS = 'neutral';
+export const REST_GESTURE = 'neutral';
 const STORAGE_KEY = 'hudCollapsed';
+/** The Actors group (pick or add actors) is hidden until scenes can be edited. */
+const SHOW_ACTORS = false;
 const VIEW_LABELS: Record<ViewName, string> = { front: 'Front', side: 'Side', back: 'Back', '3q': '3/4' };
 
-type Group = 'scene' | 'actor' | 'mode' | 'face' | 'arm' | 'view';
+type Group = 'scene' | 'actor' | 'mode' | 'face' | 'gesture' | 'view';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: Node[]) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -55,7 +57,7 @@ const iconButton = (ui: UiMeta, onclick: () => void) => {
 };
 
 export class Hud {
-  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { scene: new Map(), actor: new Map(), mode: new Map(), face: new Map(), arm: new Map(), view: new Map() };
+  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { scene: new Map(), actor: new Map(), mode: new Map(), face: new Map(), gesture: new Map(), view: new Map() };
   private actorItems: HTMLElement;
   private addActorBtn: HTMLButtonElement;
   private handlers: HudHandlers;
@@ -105,22 +107,23 @@ export class Hud {
       iconButton({ label: 'Zoom out (−)', icon: 'magnifying-glass-minus' }, () => h.zoom(ZOOM_STEP)),
       iconButton({ label: 'Zoom in (+)', icon: 'magnifying-glass-plus' }, () => h.zoom(1 / ZOOM_STEP))]);
 
-    const arms = [{ name: REST_ARMS, ui: { label: 'Arms at rest', icon: 'hand' } }, ...config.gestures];
+    const gestures = [{ name: REST_GESTURE, ui: { label: 'No gesture', icon: 'hand' } }, ...config.gestures];
     // actors: one button per actor (filled by setActors) + add
     this.addActorBtn = iconButton({ label: 'Add actor', icon: 'user-plus' }, () => { this.openGroup(null); h.addActor(); });
     const actors = group('Actors', 'users', [this.addActorBtn]);
     this.actorItems = actors.querySelector('.items')!;
     const scenes = group('Scenes', 'film-slate', [textMenu('scene', config.scenes, h.scene)], 'scene');
     // order: what the active actor does | the camera, who's on stage and scenes | reset
+    // (the Actors group is still built and kept in sync, just not shown: see SHOW_ACTORS)
     const divider = () => el('span', { className: 'sep' });
     root.append(
       this.toggle,
       group('Actions', 'person-simple', options('mode', config.modes, h.mode), 'mode'),
       group('Face', 'smiley-blank', options('face', config.faces, h.face), 'face'),
-      group('Arms', 'hand', options('arm', arms, h.arm), 'arm'),
+      group('Gestures', 'hand', options('gesture', gestures, h.gesture), 'gesture'),
       divider(),
       camera,
-      actors,
+      ...(SHOW_ACTORS ? [actors] : []),
       scenes,
       divider(),
       reset);
@@ -163,7 +166,7 @@ export class Hud {
   }
   showMode(mode: string): void { this.mark('mode', mode); }
   showFace(face: string): void { this.mark('face', face); }
-  showArm(name: string): void { this.mark('arm', name); }
+  showGesture(name: string): void { this.mark('gesture', name); }
   /** null clears the selection (free orbit). */
   showView(view: ViewName | null): void { this.mark('view', view); }
 

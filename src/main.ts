@@ -22,13 +22,17 @@ import { setSeed } from './core/random';
 import { Stage } from './core/stage';
 import { Director } from './director/director';
 import { getScene, scenes } from './director/scenes';
-import { Hud, REST_ARMS, ZOOM_STEP } from './ui/hud';
+import { Hud, REST_GESTURE, ZOOM_STEP } from './ui/hud';
 import { SceneBar } from './ui/scene-bar';
 
 const params = new URLSearchParams(location.search);
 if (params.has('seed')) setSeed(Number(params.get('seed')));
 
 const loading = document.getElementById('loading')!;
+
+// version badge in the corner: "1.1.0" → "v1.1" (the patch only when it isn't 0)
+declare const __APP_VERSION__: string;
+document.body.append(Object.assign(document.createElement('div'), { id: 'version', textContent: `v${__APP_VERSION__.replace(/\.0$/, '')}` }));
 
 const stage = new Stage(document.body, { manual: params.has('manual') });
 const cameraRig = new CameraRig(stage.camera, stage.renderer.domElement);
@@ -76,8 +80,8 @@ function setFace(name: string) {
   active().setExpression(name);
   hud.showFace(name);
 }
-function playArm(name: string) {
-  if (name === REST_ARMS) active().stopGesture(); // the arm eases back to rest
+function playGesture(name: string) {
+  if (name === REST_GESTURE) active().stopGesture(); // the arm eases back to rest
   else void active().gesture(name);
 }
 function setView(view: ViewName) {
@@ -101,7 +105,7 @@ const hud = new Hud(hudEl,
   { scenes: scenes.map((s) => ({ name: s.id, text: s.title })), modes: MODES, faces: expressions.list(), gestures: gestures.list() },
   {
     scene: (id) => void openScene(id), selectActor: select, addActor: () => void addActorFromHud(),
-    mode: (m) => setMode(m as Mode), face: setFace, arm: playArm, view: setView, zoom: (f) => cameraRig.zoom(f), reset,
+    mode: (m) => setMode(m as Mode), face: setFace, gesture: playGesture, view: setView, zoom: (f) => cameraRig.zoom(f), reset,
   });
 function syncHud() {
   if (!cast.active) return;
@@ -156,7 +160,7 @@ stage.onUpdate((dt) => {
     keyboardControl.follow(cast.active);
   }
   sceneBar.update();
-  hud.showArm(cast.active?.gestureName ?? REST_ARMS);
+  hud.showGesture(cast.active?.gestureName ?? REST_GESTURE);
   cameraRig.update(dt);
   stage.focusRadius = cast.bounds(stage.focus).radius; // the shadow covers every actor
 });

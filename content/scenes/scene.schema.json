@@ -298,8 +298,10 @@
           "enum": [
             "idle",
             "walkInPlace",
+            "circle",
             "dance",
-            "circle"
+            "bow",
+            "lookAround"
           ]
         },
         "for": {

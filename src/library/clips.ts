@@ -1,4 +1,4 @@
-// Built-in body clips (looping): idle, walk and dance.
+// Built-in body clips (looping): idle, walk, dance, bow and look around.
 import { defineClip } from '../animation/clips';
 import { sampleClip, TAU } from '../animation/pose';
 
@@ -96,6 +96,42 @@ defineClip({
       shoulderR: { r: [-0.15 - 0.22 * sw, 0, -0.46 - 0.12 * (0.5 - 0.5 * Math.sin(a * 2 + 1.2))] },
       elbowL: { r: [-0.95 + 0.2 * Math.sin(a * 2 + 1), 0.1 * b, 0] },
       elbowR: { r: [-0.95 - 0.2 * Math.sin(a * 2 + 1), -0.1 * b, 0] },
+    };
+  }),
+});
+
+// bow: bends forward from the spine, holds, comes back up and pauses (one bow per cycle)
+defineClip({
+  name: 'bow',
+  build: () => sampleClip('bow', 3.2, 60, (u: number) => {
+    // 0–0.2 down, 0.2–0.45 hold, 0.45–0.65 up, rest standing
+    const ease = (x: number) => x * x * (3 - 2 * x);
+    const k = u < 0.2 ? ease(u / 0.2) : u < 0.45 ? 1 : u < 0.65 ? 1 - ease((u - 0.45) / 0.2) : 0;
+    return {
+      hips: { p: [0, 0, -0.015 * k], r: [0.1 * k, 0, 0] },
+      spine: { r: [0.3 * k, 0, 0] },
+      head: { r: [0.12 * k, 0, 0] },
+      legL: { r: [-0.1 * k, 0, 0] }, legR: { r: [-0.1 * k, 0, 0] }, // legs stay upright
+      footL: { r: [0, 0, 0] }, footR: { r: [0, 0, 0] },
+      // arms hang down as the torso bends
+      shoulderL: { r: [-0.4 * k, 0, -0.1 * k] }, shoulderR: { r: [-0.4 * k, 0, 0.1 * k] },
+    };
+  }),
+});
+
+// look around: turns the head and torso left and right, peering, with a glance up
+defineClip({
+  name: 'lookAround',
+  build: () => sampleClip('lookAround', 5, 30, (u: number) => {
+    const a = TAU * u;
+    const turn = Math.sin(a) * 0.8 + 0.2 * Math.sin(a * 3);   // lingers on each side
+    const up = 0.5 - 0.5 * Math.cos(a * 2);
+    return {
+      hips: { r: [0, 0.08 * turn, 0] },
+      spine: { r: [0.02, 0.22 * turn, 0] },
+      head: { r: [-0.12 * up + 0.04, 0.55 * turn, 0.05 * Math.sin(a * 2)] },
+      shoulderL: { r: [0.05, 0, 0.03 * up] }, shoulderR: { r: [0.05, 0, -0.03 * up] },
+      footL: { r: [0, -0.08 * turn, 0] }, footR: { r: [0, -0.08 * turn, 0] },
     };
   }),
 });

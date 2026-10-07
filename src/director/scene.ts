@@ -53,7 +53,7 @@ export interface GestureStep extends StepBase { do: 'gesture'; name: string }
 /** Sets a facial expression (neutral, smile, talk, sad, surprise…); with `for`, holds it that many seconds and returns to neutral. */
 export interface FaceStep extends StepBase { do: 'face'; name: string; for?: number }
 /** Switches the body mode; with `for`, keeps it that many seconds and returns to idle. */
-export interface ActStep extends StepBase { do: 'act'; mode: 'idle' | 'walkInPlace' | 'dance' | 'circle'; for?: number }
+export interface ActStep extends StepBase { do: 'act'; mode: 'idle' | 'walkInPlace' | 'circle' | 'dance' | 'bow' | 'lookAround'; for?: number }
 /** Waits a number of seconds, or until a marker is reached (with both: whichever comes first). */
 export interface WaitStep extends StepBase { do: 'wait'; for?: number; until?: string }
 /** Reaches a marker right away. Every track also reaches "<actor>:end" when it finishes. */

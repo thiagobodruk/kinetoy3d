@@ -6,3 +6,6 @@ defineExpression({ name: 'smile', channels: { smile: 1 }, ui: { label: 'Smile', 
 defineExpression({ name: 'talk', channels: { smile: 0.25 }, talk: true, ui: { label: 'Talk', icon: 'chat-teardrop-dots', key: 'KeyT' } }); // friendly talk
 defineExpression({ name: 'sad', channels: { sad: 1 }, ui: { label: 'Sad', icon: 'smiley-sad', key: 'KeyU' } });
 defineExpression({ name: 'surprise', channels: { surprise: 1 }, ui: { label: 'Surprise', icon: 'smiley-x-eyes' } });
+defineExpression({ name: 'angry', channels: { angry: 1 }, ui: { label: 'Angry', icon: 'smiley-angry' } });
+defineExpression({ name: 'laugh', channels: { laugh: 1 }, ui: { label: 'Laugh', icon: 'smiley-wink' } });
+defineExpression({ name: 'scared', channels: { fear: 1 }, ui: { label: 'Scared', icon: 'smiley-nervous' } });

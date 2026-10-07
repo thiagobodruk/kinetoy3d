@@ -8,7 +8,7 @@ import type { Layer, LayerState } from '../layer';
 
 export class FaceLayer implements Layer {
   /** Current (smoothed) channel values. */
-  readonly face = { open: 0, smile: 0, sad: 0, surprise: 0 };
+  readonly face = { open: 0, smile: 0, sad: 0, surprise: 0, angry: 0, laugh: 0, fear: 0 };
   private syllableTarget = 0;
   private syllableTimer = 0;
   private phraseTimer = 1.5;
@@ -17,6 +17,7 @@ export class FaceLayer implements Layer {
   private browArch = 0;      // current arch 0..1 (smoothed)
   private browTarget = 0;
   private browTimer = 0;     // time left for the current arch
+  private t = 0;             // clock for the laugh bounce and the fear tremble
 
   constructor(rig: Rig) {
     // rest positions are recorded once per model (a new layer may start from a displaced pose)
@@ -47,23 +48,34 @@ export class FaceLayer implements Layer {
       }
       openTarget = this.syllableTarget;
     }
-    const smileTarget = e.channels?.smile ?? 0;
-    const sadTarget = e.channels?.sad ?? 0;
-    const surpriseTarget = e.channels?.surprise ?? 0;
     const f = this.face;
+    const ch = e.channels ?? {};
+    this.t += dt;
+    // laugh: the mouth bounces open and half-closed ~4.5 times a second ("ha-ha-ha")
+    const ha = Math.abs(Math.sin(this.t * Math.PI * 4.5));
+    openTarget = Math.max(openTarget, f.laugh * (0.15 + 0.35 * ha));
     const rate = openTarget > f.open ? 28 : 18;
     f.open += (openTarget - f.open) * Math.min(1, dt * rate);
-    f.smile += (smileTarget - f.smile) * Math.min(1, dt * 8);
-    f.sad += (sadTarget - f.sad) * Math.min(1, dt * 4); // sadness sets in slowly
-    f.surprise += (surpriseTarget - f.surprise) * Math.min(1, dt * 7);
+    const ease = (key: Exclude<keyof typeof f, 'open'>, k: number) => {
+      f[key] += ((ch[key] ?? 0) - f[key]) * Math.min(1, dt * k);
+    };
+    ease('smile', 8);
+    ease('sad', 4); // sadness sets in slowly
+    ease('surprise', 7);
+    ease('angry', 6);
+    ease('laugh', 8);
+    ease('fear', 7);
 
     // mouth morph targets: 0 = smile, 1 = open (talk), 2 = sad, 3 = "O"
     face.mouth.forEach((m) => {
-      const o = f.surprise * (1 - f.open); // surprise: "O" mouth (😯)
+      const o = Math.min(1, f.surprise + 0.55 * f.fear) * (1 - f.open); // surprise/fear: "O" mouth (😯)
+      const smile = Math.min(1, f.smile + f.laugh);
+      const frown = Math.min(1, f.sad + 0.45 * f.angry + 0.3 * f.fear);
       if (!m.morphTargetInfluences) return;
-      m.morphTargetInfluences[0] = f.smile * (1 - f.open) * (1 - o);
+      // the smile and open morphs add up past the lips (into the beard): a laugh keeps only part of the smile while open
+      m.morphTargetInfluences[0] = smile * (1 - f.open * (1 - 0.35 * f.laugh)) * (1 - o);
       m.morphTargetInfluences[1] = f.open;
-      m.morphTargetInfluences[2] = f.sad * (1 - f.open) * (1 - o);
+      m.morphTargetInfluences[2] = frown * (1 - f.open) * (1 - o);
       m.morphTargetInfluences[3] = o;
     });
     // eyebrows: while talking, they arch softly from time to time (emphasis) and settle back
@@ -82,18 +94,33 @@ export class FaceLayer implements Layer {
     face.brows.forEach((b, i) => {
       const sx = b.userData.side;
       b.position.copy(this.browRest[i]);
-      const arch = this.browArch + 2.4 * f.surprise; // surprise: strongly arched brows
-      b.position.y += 0.012 * f.smile + 0.018 * arch + 0.01 * f.sad;
-      b.position.x -= sx * 0.006 * f.sad; // pulls the brows together (furrowed forehead)
+      const arch = this.browArch + 2.4 * f.surprise + 1.6 * f.fear; // surprise/fear: strongly arched brows
+      b.position.y += 0.012 * (f.smile + f.laugh) + 0.018 * arch + 0.01 * f.sad - 0.014 * f.angry;
+      b.position.x -= sx * (0.006 * f.sad + 0.009 * f.angry + 0.004 * f.fear); // pulls the brows together (furrowed forehead)
       // the inner end rises more than the outer one: an expressive arch between the brows;
-      // when sad the outer end drops much more ("roof"-shaped brow)
-      b.rotation.z = -sx * (0.09 * arch + 0.38 * f.sad);
+      // when sad (or scared) the outer end drops much more ("roof"-shaped brow);
+      // angry tilts them the other way: inner ends down (a "V")
+      b.rotation.z = -sx * (0.09 * arch + 0.38 * f.sad + 0.3 * f.fear - 0.42 * f.angry);
     });
-    s.squint = 0.4 * f.smile + 0.18 * f.sad; // applied together with blinking
+    s.squint = 0.4 * f.smile + 0.18 * f.sad + 0.35 * f.angry + 0.75 * f.laugh; // applied together with blinking
     // sad: head down and torso slightly hunched
     if (f.sad > 0.001) {
       s.bones.head?.rotateX(0.16 * f.sad);
       s.bones.spine?.rotateX(0.06 * f.sad);
+    }
+    // angry: head down a little, glaring from under the brows
+    if (f.angry > 0.001) s.bones.head?.rotateX(0.07 * f.angry);
+    // laugh: head back, shaking with each "ha", the torso bouncing along
+    if (f.laugh > 0.001) {
+      s.bones.head?.rotateX(-f.laugh * (0.1 + 0.05 * ha));
+      s.bones.spine?.rotateX(-f.laugh * 0.03 * ha);
+    }
+    // fear: head pulled back and a fast, small tremble
+    if (f.fear > 0.001) {
+      const tremble = Math.sin(this.t * 53) * 0.6 + Math.sin(this.t * 37) * 0.4;
+      s.bones.head?.rotateX(-0.05 * f.fear);
+      s.bones.head?.rotateZ(0.012 * f.fear * tremble);
+      s.bones.spine?.rotateX(-0.03 * f.fear);
     }
     // subtle head nod while talking (over the mixer pose)
     if (e.talk && s.bones.head) s.bones.head.rotateX(-f.open * 0.035);

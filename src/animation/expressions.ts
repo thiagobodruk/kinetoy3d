@@ -7,8 +7,11 @@ import { Registry, type UiMeta } from './registry';
  *   smile → smiling mouth, raised brows, squint
  *   sad   → drooping mouth, "roof"-shaped brows, head down
  *   surprise → "O" mouth, strongly arched brows
+ *   angry → brows down and pulled together (inner ends low), tense frown, squint
+ *   laugh → open smiling mouth bouncing in "ha-ha"s, eyes squeezed, head tilting back
+ *   fear  → brows raised with inner ends up, small "O" mouth, trembling head
  */
-export type FaceChannel = 'smile' | 'sad' | 'surprise';
+export type FaceChannel = 'smile' | 'sad' | 'surprise' | 'angry' | 'laugh' | 'fear';
 
 export interface ExpressionDef {
   name: string;
