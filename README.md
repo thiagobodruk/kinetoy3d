@@ -42,7 +42,7 @@ The buttons are generated from the registered modes, expressions and gestures (s
 | **Scenes** | A menu with the scenes in `content/scenes/` | `Space` plays/pauses the open scene |
 | **Actions** | Idle · Walk (in place) · Walk in circle · Dance · Bow · Look around | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
 | **Face** | Neutral · Smile · Talk · Sad · Surprise · Angry · Laugh · Scared | `Y` smile, `T` talk, `U` sad (each one toggles) |
-| **Gestures** | No gesture · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
+| **Gestures** | No gesture · Thumbs up · Wave · Raise arm · Raise both arms · Shrug | `1` to `5` play the gestures |
 | **Camera** | Views (Front / Side / Back / 3/4) · Zoom out · Zoom in | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
 | **Reset** | Restarts the open scene, or resets the stage | |
 | **Panel** | Collapse / expand | `H` |

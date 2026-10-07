@@ -59,6 +59,23 @@ defineGesture({
   },
 });
 
+// raise both arms: the "raise arm" pose on both sides, mirrored, with a little bounce
+defineGesture({
+  name: 'armsUp',
+  ui: { label: 'Raise both arms', icon: 'hand-palm', key: 'Digit5' },
+  duration: 2.4,
+  pose: (t: number) => {
+    const bob = 0.06 * Math.sin(t * Math.PI * 2 * 1.2);
+    const arm = (sx: number) => armQuats(sx, dir(sx * 0.8, -0.1 + bob, 0.6), dir(sx * 0.12, 1, 0.1), [0, -0.1, 1]);
+    const L = arm(1), R = arm(-1);
+    return {
+      q: { shoulderL: L.s, elbowL: L.e, shoulderR: R.s, elbowR: R.e },
+      add: { spine: [-0.04, 0, 0], head: [-0.08, 0, 0] },
+      lift: 0.012,
+    };
+  },
+});
+
 // shrug: shoulders up, forearms forward with palms up, head tilted
 defineGesture({
   name: 'shrug',
