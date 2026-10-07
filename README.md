@@ -1,8 +1,8 @@
-# Squid 3D
+# KineToy 3D
 
-A procedural 3D character in the style of a vinyl toy, built with [Three.js](https://threejs.org/) and no 3D modeling tool. Every surface is written in code as a signed distance field (SDF). The fields are joined with smooth unions, turned into meshes at load time, rigged to a skeleton and animated by a small state machine.
+A framework for procedural 3D characters in the style of vinyl toys, built with [Three.js](https://threejs.org/) and no 3D modeling tool. Every surface is written in code as a signed distance field (SDF). The fields are joined with smooth unions, turned into meshes at load time, rigged to a skeleton and animated by a small state machine.
 
-There's no build step and no model file to download. The whole character is generated in the browser when the page opens.
+Its first character is **Squid**. There's no build step and no model file to download. The whole character is generated in the browser when the page opens.
 
 ## Running locally
 
@@ -128,3 +128,7 @@ The face, the arms and the actions are independent layers, so they can be combin
 - **Icons:** [Phosphor Icons](https://phosphoricons.com/) 2.1.1 (regular weight), loaded from unpkg.
 - **Load time:** the meshes are built when the page loads (the "Generating model…" screen). The fine grids on the arms and hands account for most of that time.
 - **Git:** `evidence/` (review captures), `.vite/` and other local caches are ignored.
+
+## License
+
+[MIT](LICENSE) © 2026 Thiago Bodruk
