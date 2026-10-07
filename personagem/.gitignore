@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# caches e artefatos locais
+.vite/
+__pycache__/
+node_modules/
+
+# capturas de revisão geradas durante o desenvolvimento (~50 MB)
+evidence/
+
+# estado local do pipeline img2threejs
+.img2threejs/

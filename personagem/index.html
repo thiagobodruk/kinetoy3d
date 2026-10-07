@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personagem 3D</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #eef0f3; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2230; }
+  canvas { display: block; }
+  #ui { position: fixed; left: 12px; top: 12px; background: rgba(255,255,255,.85); backdrop-filter: blur(10px); border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); font-size: 12px; max-width: calc(100vw - 24px); }
+  #ui .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+  #ui h1 { font-size: 13px; margin: 0; }
+  .row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
+  .row .label { width: 46px; color: #556; font-weight: 600; }
+  button { font: inherit; padding: 3px 8px; border-radius: 6px; border: 1px solid #ccd; background: #fff; cursor: pointer; line-height: 1.4; }
+  button.on { background: #e2222b; color: #fff; border-color: #e2222b; }
+  #state { font-weight: 700; color: #e2222b; }
+  .hint { color: #778; font-size: 11px; margin-top: 5px; }
+  #hudToggle { padding: 2px 7px; color: #556; }
+  #hudShow { position: fixed; left: 12px; top: 12px; display: none; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
+  body.hud-hidden #ui { display: none; }
+  body.hud-hidden #hudShow { display: block; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="loading" style="position:fixed;inset:0;display:grid;place-items:center;font-size:15px;color:#667">Gerando modelo…</div>
+<div id="ui">
+  <div class="head">
+    <h1>Estado: <span id="state">idle</span></h1>
+    <button id="hudToggle" title="Ocultar HUD (H)">Ocultar</button>
+  </div>
+  <div class="row">
+    <span class="label">Ações</span>
+    <button id="bIdle" class="on">Idle</button>
+    <button id="bWalk">Andar</button>
+    <button id="bCircle">Andar em círculo</button>
+  </div>
+  <div class="row">
+    <span class="label">Rosto</span>
+    <button data-face="neutral" class="on">Neutro</button>
+    <button data-face="smile">Sorrir</button>
+    <button data-face="talk">Falar</button>
+  </div>
+  <div class="row">
+    <span class="label">Câmera</span>
+    <button data-view="front">Frente</button>
+    <button data-view="side">Lado</button>
+    <button data-view="back">Costas</button>
+    <button data-view="3q">3/4</button>
+  </div>
+  <div class="hint">WASD andar · T falar · Y sorrir · H ocultar HUD · arraste p/ orbitar</div>
+</div>
+<button id="hudShow" title="Exibir HUD (H)">HUD</button>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createCharacterModel } from './character.js';
+import { CharacterStateMachine } from './animations.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf3f4f6);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 1.2, 6.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d2c8, 0.8));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(2.5, 5, 4);
+key.castShadow = true;
+// frustum de sombra justo em volta do personagem (segue-o em tick) → texels pequenos, sem serrilhado
+key.shadow.mapSize.set(4096, 4096);
+key.shadow.camera.left = -1.8; key.shadow.camera.right = 1.8;
+key.shadow.camera.top = 1.8; key.shadow.camera.bottom = -1.8;
+key.shadow.camera.near = 1; key.shadow.camera.far = 14;
+key.shadow.radius = 4;
+key.shadow.bias = -0.0003;
+key.shadow.normalBias = 0.012;
+const KEY_OFFSET = new THREE.Vector3(2.5, 5, 4);
+scene.add(key);
+scene.add(key.target);
+const rim = new THREE.DirectionalLight(0xffffff, 0.6);
+rim.position.set(-3, 3, -4);
+scene.add(rim);
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 64), new THREE.ShadowMaterial({ opacity: 0.18 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const character = createCharacterModel();
+scene.add(character);
+const fsm = new CharacterStateMachine(character);
+const stateEl = document.getElementById('state');
+fsm.onChange((s) => { stateEl.textContent = s + ({ smile: ' + sorriso', talk: ' + fala' }[fsm.expression] || ''); });
+
+// ---------- input ----------
+const keys = new Set();
+addEventListener('keydown', (e) => { keys.add(e.code); });
+addEventListener('keyup', (e) => { keys.delete(e.code); });
+let mode = 'idle'; // idle | walkInPlace | circle | free
+const btn = { idle: bIdle, walkInPlace: bWalk, circle: bCircle };
+function setMode(m) {
+  mode = m;
+  Object.entries(btn).forEach(([k, b]) => b.classList.toggle('on', k === m));
+}
+bIdle.onclick = () => setMode('idle');
+bWalk.onclick = () => setMode('walkInPlace');
+bCircle.onclick = () => setMode('circle');
+// ocultar/exibir HUD (lembrado entre recargas quando o navegador permite)
+function setHudHidden(hidden) {
+  document.body.classList.toggle('hud-hidden', hidden);
+  try { localStorage.setItem('hudHidden', hidden ? '1' : '0'); } catch (e) {}
+}
+try { setHudHidden(localStorage.getItem('hudHidden') === '1'); } catch (e) {}
+hudToggle.onclick = () => setHudHidden(true);
+hudShow.onclick = () => setHudHidden(false);
+addEventListener('keydown', (e) => {
+  if (e.code === 'KeyH' && !e.repeat) setHudHidden(!document.body.classList.contains('hud-hidden'));
+});
+
+const faceButtons = document.querySelectorAll('[data-face]');
+function setFace(name) {
+  fsm.setExpression(name);
+  faceButtons.forEach((b) => b.classList.toggle('on', b.dataset.face === name));
+}
+faceButtons.forEach((b) => b.onclick = () => setFace(b.dataset.face));
+// atalhos: T alterna fala, Y alterna sorriso
+addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (e.code === 'KeyT') setFace(fsm.expression === 'talk' ? 'neutral' : 'talk');
+  if (e.code === 'KeyY') setFace(fsm.expression === 'smile' ? 'neutral' : 'smile');
+});
+
+const views = { front: [0, 1.2, 6.2], side: [6.2, 1.2, 0], back: [0, 1.2, -6.2], '3q': [4.2, 1.8, 4.6] };
+document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
+  const v = views[b.dataset.view];
+  camera.position.set(character.position.x + v[0], v[1], character.position.z + v[2]);
+  controls.target.set(character.position.x, 1.0, character.position.z);
+});
+
+const SPEED = 1.1;
+let circleAngle = 0;
+const clock = new THREE.Clock();
+const tmp = new THREE.Vector3();
+
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const move = new THREE.Vector3(
+    (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0), 0,
+    (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0));
+  if (move.lengthSq() > 0 && mode !== 'free') setMode('free');
+  if (mode === 'free' && move.lengthSq() === 0 && !keys.size) { /* fica parado em idle */ }
+
+  let moving = false, speed = 0;
+  if (mode === 'walkInPlace') { moving = true; speed = SPEED; }
+  else if (mode === 'circle') {
+    moving = true; speed = SPEED;
+    const R = 1.6;
+    circleAngle += (SPEED / R) * dt;
+    character.position.set(Math.sin(circleAngle) * R, 0, Math.cos(circleAngle) * R - R);
+    character.rotation.y = circleAngle + Math.PI / 2;
+  } else if (mode === 'free' && move.lengthSq() > 0) {
+    // movimento relativo à câmera
+    const fwd = tmp.subVectors(controls.target, camera.position).setY(0).normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
+    const dir = new THREE.Vector3().addScaledVector(right, move.x).addScaledVector(fwd, -move.z).normalize();
+    moving = true; speed = SPEED;
+    character.position.addScaledVector(dir, SPEED * dt);
+    camera.position.addScaledVector(dir, SPEED * dt);
+    controls.target.addScaledVector(dir, SPEED * dt);
+    const targetYaw = Math.atan2(dir.x, dir.z);
+    let d = targetYaw - character.rotation.y;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    character.rotation.y += d * Math.min(1, dt * 10);
+  }
+  fsm.update(dt, { moving, speed });
+  key.target.position.set(character.position.x, 0.9, character.position.z);
+  key.position.copy(key.target.position).add(KEY_OFFSET);
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+// captura determinística de uma vista (usada pelos gates de revisão; salva em evidence/ via dev_server.py)
+async function capture(name, azimuthDeg, { dist = 4.2, height = 1.1, target = 1.0 } = {}) {
+  const a = THREE.MathUtils.degToRad(azimuthDeg);
+  const c = character.position;
+  camera.position.set(c.x + Math.sin(a) * dist, height, c.z + Math.cos(a) * dist);
+  controls.target.set(c.x, target, c.z);
+  controls.update();
+  key.target.position.set(c.x, 0.9, c.z);
+  key.position.copy(key.target.position).add(KEY_OFFSET);
+  renderer.render(scene, camera);
+  const data = renderer.domElement.toDataURL('image/png');
+  await fetch('/save', { method: 'POST', body: JSON.stringify({ name, data }) });
+  return name;
+}
+document.getElementById('loading')?.remove();
+window.__app = { scene, camera, controls, character, fsm, setMode, setFace, renderer, capture };
+</script>
+</body>
+</html>
