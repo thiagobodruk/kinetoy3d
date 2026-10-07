@@ -1,7 +1,8 @@
 // Animator: drives one character by stacking animation layers, in this order:
 //   body (looping clips) → blink → face → talk gestures → idle life → arm gesture
 // Each layer writes on top of the pose left by the previous ones.
-import type { CharacterModel } from '../character';
+import type * as THREE from 'three';
+import type { Rig } from '../rig/rig';
 import { expressions } from './expressions';
 import type { Layer, LayerState } from './layer';
 import { BlinkLayer } from './layers/blink';
@@ -18,12 +19,13 @@ export class Animator {
   private layers: Layer[];
   private state: LayerState;
 
-  constructor(readonly model: CharacterModel) {
-    this.body = new BodyLayer(model);
-    this.face = new FaceLayer(model);
+  /** `root` is the object the clips animate (the bones are found by name under it). */
+  constructor(root: THREE.Object3D, readonly rig: Rig) {
+    this.body = new BodyLayer(root);
+    this.face = new FaceLayer(rig);
     this.gesture = new GestureLayer();
     this.layers = [this.body, new BlinkLayer(), this.face, new TalkGestureLayer(), new IdleLifeLayer(), this.gesture];
-    this.state = { model, bones: model.userData.bones, body: this.body.current, expression: expressions.get('neutral'), squint: 0 };
+    this.state = { rig, bones: rig.bones, body: this.body.current, expression: expressions.get('neutral'), squint: 0 };
   }
 
   /** Name of the current expression. */
@@ -34,7 +36,8 @@ export class Animator {
   get bodyState(): BodyStateName | null { return this.body.current; }
   setBodyState(name: BodyStateName, fade?: number): void { this.body.set(name, fade); }
 
-  playGesture(name: string): void { this.gesture.play(name); }
+  /** Plays a gesture; resolves when it ends (or is stopped or replaced). */
+  playGesture(name: string): Promise<void> { return this.gesture.play(name); }
   stopGesture(immediate = false): void { this.gesture.stop(immediate); }
   /** Gesture playing (null when none, or once it starts easing out). */
   get activeGesture(): string | null { return this.gesture.active; }

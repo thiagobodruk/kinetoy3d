@@ -36,13 +36,16 @@ The buttons are generated from the registered modes, expressions and gestures (s
 
 | Group | Buttons | Shortcuts |
 | --- | --- | --- |
+| **Actors** | One button per actor (tinted with its shirt color) · Add actor | Click a character on the stage to make it active |
 | **Actions** | Idle · Walk (in place) · Walk in circle · Dance | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
 | **Face** | Neutral · Smile · Talk · Sad · Surprise | `Y` smile, `T` talk, `U` sad (each one toggles) |
 | **Arms** | Rest · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
 | **Camera** | View menu (Front / Side / Back / 3/4) · Zoom out · Zoom in · Reset | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
 | **Panel** | Collapse / expand | `H` |
 
-**Reset** returns to the front view and puts the character back at the origin, idle, with a neutral face and no gesture.
+The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Adding an actor generates a Squid variation (a few seconds behind the loading screen).
+
+**Reset** returns every actor to its home position, idle, with a neutral face and no gesture, and the camera to the front view.
 
 The face, the arms and the actions are independent layers, so they can be combined. For example, the character can dance and talk with a thumbs up at the same time.
 
@@ -52,9 +55,17 @@ The face, the arms and the actions are independent layers, so they can be combin
 .
 ├── index.html              # Page shell (the HUD is generated)
 ├── src/
-│   ├── main.ts             # Demo app: wires the stage, character, animator, HUD and keyboard
-│   ├── character.ts        # Procedural model: skeleton, SDF fields, meshes, skinning, materials
+│   ├── main.ts             # Demo app: wires the stage, cast, HUD and keyboard
 │   ├── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
+│   ├── rig/
+│   │   └── rig.ts          # Rig contract: canonical humanoid bones, face parts, capabilities
+│   ├── characters/
+│   │   ├── registry.ts     # Character types (defineCharacter)
+│   │   └── squid.ts        # Squid: skeleton, SDF fields, meshes, skinning, materials, palette
+│   ├── actor/
+│   │   ├── actor.ts        # Actor: model + rig + animator + motion; async actions
+│   │   ├── motion.ts       # Modes: idle, walk in place, circle, dance, free, walkTo
+│   │   └── cast.ts         # Actors on the stage, the active one, selection ring
 │   ├── animation/          # Animation engine (character-agnostic)
 │   │   ├── animator.ts     # Stacks the layers for one character; public API
 │   │   ├── layer.ts        # Layer interface and the state shared by the layers
@@ -71,7 +82,7 @@ The face, the arms and the actions are independent layers, so they can be combin
 │   │   ├── keyboard.ts     # Held-key tracking
 │   │   └── random.ts       # Seedable random source for the animation layers
 │   ├── behaviors/
-│   │   └── locomotion.ts   # Idle, walk in place, walk in circle, dance and free (WASD) movement
+│   │   └── keyboard-control.ts  # WASD / arrows steer the active actor; the camera follows
 │   └── ui/
 │       ├── hud.ts          # Builds the toolbar from the registries; shows the active state
 │       └── hud.css         # Page and toolbar styles (desktop toolbar, mobile trays)
@@ -100,9 +111,21 @@ The face, the arms and the actions are independent layers, so they can be combin
 - **`field(center, radius, fn)`:** a node from a world-space distance function.
 - **`surfaceZ`:** finds the surface along +Z. Used to place decals (the mouth and the star).
 
-### `character.ts`: the model
+### `rig/` and `characters/`: models
 
-`createCharacterModel()` returns a `THREE.Group` whose `userData` holds the bones and the face meshes that the animation layer drives.
+A character type builds a model and its **rig**, the contract the animation engine works with:
+
+- `bones`: the skeleton under the canonical humanoid names (`hips`, `spine`, `head`, `shoulderL`, `elbowL`, `fingersL`, `fingerTipsL`, `thumbL`, `legL`, `kneeL`, `footL` and the `R` side).
+- `face`: eye pivots (blink), mouth layers with the morph targets `0` smile · `1` open · `2` sad · `3` "O", and eyebrows. Any of them can be empty; the layers skip what's missing.
+- `fingers`: whether the fingers and thumbs can curl.
+
+```ts
+defineCharacter({ name: 'squid', create: (options) => ({ object, rig }), ui: { label: 'Squid', icon: 'user' } });
+```
+
+### `characters/squid.ts`: the Squid
+
+`createSquid({ palette })` builds the model; `palette` overrides any of the colors in `BASE_PALETTE` (skin, hair, shirt, pants, shoes…).
 
 - **Coordinates:** Y up, front along +Z, the character's left along +X. The total height is about 2.0 units.
 - **Skeleton (`BONES`):**
@@ -173,9 +196,29 @@ defineGesture({
 
 Icons are [Phosphor](https://phosphoricons.com/) names. Built-in content is in `src/library/`.
 
+### `actor/`: actors and the cast
+
+An **Actor** is one character on the stage: its model and rig, an `Animator` and a `Motion` controller. The **Cast** holds every actor, places new ones at the next home position along X and tracks the active one.
+
+```ts
+const squid = cast.add('squid');                         // the original
+const blue = cast.add('squid', { palette: { shirt: 0x2b6cd6 } });
+
+// immediate state
+squid.setMode('dance');            // idle · walkInPlace · circle · dance
+squid.setExpression('smile');
+
+// actions: resolve when they finish (in stage time, so they also work in manual mode)
+await blue.walkTo(0.8, 1.2);
+await blue.gesture('wave');
+await blue.face('surprise', 1.5);  // holds it, then back to neutral
+await squid.act('dance', 3);       // dances for 3 s, then idles
+await squid.wait(0.5);
+```
+
 ### Frame loop
 
-`Stage` runs every registered update callback in order and then renders. The demo registers a single callback that moves the character (`Locomotion`), feeds the result to the animator, syncs the HUD and eases the camera. The key light and its shadow follow `stage.focus`.
+`Stage` runs every registered update callback in order and then renders. The demo registers a single callback: the keyboard steers the active actor, every actor updates (motion, then its animator), the camera follows a steered actor, the HUD syncs and the camera eases. The key light follows `stage.focus` and its shadow grows to cover every actor.
 
 Time can run in real time (`requestAnimationFrame`) or be stepped manually with a fixed time step (`stage.advance(seconds)`). Together with the seedable random source, manual time makes a render depend only on its inputs.
 
@@ -192,16 +235,15 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | --- | --- |
 | `stage` | The stage (frame loop, lights) |
 | `scene`, `camera`, `controls`, `renderer` | The Three.js scene objects |
-| `character` | The character model |
-| `animator` | The character's animator (layers, expressions, gestures) |
-| `locomotion` | The movement controller |
-| `setMode`, `setFace`, `reset` | HUD actions |
+| `cast` | The cast (`cast.actors`, `cast.add`, `cast.select`) |
+| `active` | The active actor |
+| `setMode`, `setFace`, `reset`, `select(name)`, `addActor()` | HUD actions |
 | `capture(azimuthDeg, { dist, height, target })` | Renders a fixed view and returns it as a PNG data URL |
 | `advance(seconds)` | Advances time in fixed 1/60 s steps and renders |
 
 ## Tools
 
-Both tools run locally; they aren't part of the published site. Renders go to `evidence/`, which is ignored by git.
+Both tools run locally; they aren't part of the published site. Renders go to `renders/`, which is ignored by git.
 
 **`render`** opens the app in headless Chrome (it uses the Chrome installed on the machine), optionally sets a pose, advances time and saves one PNG per view. Without `--url`, it starts its own Vite server. The page runs with `?manual&seed=1`, so the same arguments always produce the same pixels.
 
@@ -209,9 +251,10 @@ Both tools run locally; they aren't part of the published site. Renders go to `e
 npm run render -- --name smile --face smile --views front,3q
 npm run render -- --name dance --mode dance --wait 1.2
 npm run render -- --name wave --gesture wave --wait 0.8 --views 0,45,120
+npm run render -- --name trio --actors 3 --mode dance --wait 1
 ```
 
-Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
+Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--actors` (how many actors; the options apply to the first), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
 
 **`diff`** compares two sets of renders and writes images with the changed pixels in red. It exits with an error when more than 0.5% of a view changed.
 
@@ -230,8 +273,8 @@ Every push to `main` runs [`deploy.yml`](.github/workflows/deploy.yml), which bu
 
 - **Stack:** TypeScript (strict), Vite, Three.js 0.160 (npm).
 - **Icons:** [Phosphor Icons](https://phosphoricons.com/) 2.1.1 (regular weight), bundled from npm.
-- **Load time:** the meshes are built when the page loads (the "Generating model…" screen). The fine grids on the arms and hands account for most of that time.
-- **Git:** `evidence/` (renders), `dist/`, `node_modules/` and other local caches are ignored.
+- **Load time:** the meshes are built when the page loads (the "Loading..." screen), about 4–5 s per Squid. The fine grids on the arms and hands account for most of that time.
+- **Git:** `renders/`, `dist/`, `node_modules/` and other local caches are ignored.
 
 ## License
 

@@ -9,6 +9,8 @@ import { keyLabel, type UiMeta } from '../animation/registry';
 import { VIEWS, type ViewName } from '../core/camera';
 
 export interface HudItem { name: string; ui?: UiMeta }
+/** An actor button: its name and a color for its icon. */
+export interface HudActor { name: string; color: string }
 
 export interface HudConfig {
   modes: HudItem[];
@@ -17,6 +19,8 @@ export interface HudConfig {
 }
 
 export interface HudHandlers {
+  selectActor(name: string): void;
+  addActor(): void;
   mode(mode: string): void;
   face(face: string): void;
   /** gesture name, or REST_ARMS to return to the rest pose */
@@ -31,7 +35,7 @@ export const REST_ARMS = 'neutral';
 const STORAGE_KEY = 'hudCollapsed';
 const VIEW_LABELS: Record<ViewName, string> = { front: 'Front', side: 'Side', back: 'Back', '3q': '3/4' };
 
-type Group = 'mode' | 'face' | 'arm' | 'view';
+type Group = 'actor' | 'mode' | 'face' | 'arm' | 'view';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: Node[]) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -46,13 +50,17 @@ const iconButton = (ui: UiMeta, onclick: () => void) => {
 };
 
 export class Hud {
-  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { mode: new Map(), face: new Map(), arm: new Map(), view: new Map() };
+  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { actor: new Map(), mode: new Map(), face: new Map(), arm: new Map(), view: new Map() };
+  private actorItems: HTMLElement;
+  private addActorBtn: HTMLButtonElement;
+  private handlers: HudHandlers;
   private heads: Partial<Record<Group, HTMLButtonElement>> = {};
   private groups: HTMLElement[] = [];
   private toggle: HTMLButtonElement;
   private menu: HTMLElement;
 
   constructor(private root: HTMLElement, config: HudConfig, h: HudHandlers) {
+    this.handlers = h;
     root.replaceChildren();
     this.toggle = el('button', { id: 'hudToggle', onclick: () => this.toggleCollapsed() });
     const sep = () => el('span', { className: 'sep' });
@@ -99,8 +107,13 @@ export class Hud {
       resetButton('reset-wide')]);
 
     const arms = [{ name: REST_ARMS, ui: { label: 'Arms at rest', icon: 'hand' } }, ...config.gestures];
+    // actors: one button per actor (filled by setActors) + add
+    this.addActorBtn = iconButton({ label: 'Add actor', icon: 'user-plus' }, () => { this.openGroup(null); h.addActor(); });
+    const actors = group('Actors', 'users', [this.addActorBtn]);
+    this.actorItems = actors.querySelector('.items')!;
     root.append(
       this.toggle, sep(),
+      actors, sep(),
       group('Actions', 'person-simple', options('mode', config.modes, h.mode), 'mode'), sep(),
       group('Face', 'smiley-blank', options('face', config.faces, h.face), 'face'), sep(),
       group('Arms', 'hand', options('arm', arms, h.arm), 'arm'), sep(),
@@ -112,6 +125,19 @@ export class Hud {
     try { collapsed = localStorage.getItem(STORAGE_KEY) === '1'; } catch { /* storage unavailable */ }
     this.setCollapsed(collapsed);
   }
+
+  /** Rebuilds the actor buttons (icons tinted with each actor's color). */
+  setActors(actors: HudActor[]): void {
+    this.buttons.actor.clear();
+    const buttons = actors.map((a) => {
+      const b = iconButton({ label: a.name, icon: 'user' }, () => { this.handlers.selectActor(a.name); this.openGroup(null); });
+      b.style.color = a.color;
+      this.buttons.actor.set(a.name, b);
+      return b;
+    });
+    this.actorItems.replaceChildren(...buttons, this.addActorBtn);
+  }
+  showActor(name: string): void { this.mark('actor', name); }
 
   /** Opens one group's tray (narrow screens) and closes the others; null closes all. */
   private openGroup(g: HTMLElement | null): void {

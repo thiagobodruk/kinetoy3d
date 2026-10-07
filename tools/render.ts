@@ -2,8 +2,8 @@
 // PNG renders of the character from fixed camera angles.
 //
 //   npm run render -- [--url http://localhost:5178] [--views front,side,back,3q]
-//                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5]
-//                     [--name prefix] [--out evidence] [--size 900x1200] [--seed 1]
+//                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5] [--actors 3]
+//                     [--name prefix] [--out renders] [--size 900x1200] [--seed 1]
 //
 // Without --url it starts its own Vite dev server on a free port. The page runs in manual
 // time (?manual) with a fixed seed, so the same arguments always give the same image.
@@ -25,10 +25,11 @@ const { values: args } = parseArgs({
     gesture: { type: 'string' },
     wait: { type: 'string', default: '0.5' },
     name: { type: 'string', default: 'render' },
-    out: { type: 'string', default: 'evidence' },
+    out: { type: 'string', default: 'renders' },
     size: { type: 'string', default: '900x1200' },
     dist: { type: 'string', default: '4.2' },
     seed: { type: 'string', default: '1' },
+    actors: { type: 'string', default: '1' },
   },
 });
 
@@ -58,13 +59,14 @@ try {
   await page.goto(target.href);
   await Promise.race([page.waitForFunction(() => window.__app, null, { timeout: 180_000 }), failed]);
 
-  await page.evaluate(({ face, mode, gesture, wait }) => {
+  await page.evaluate(({ face, mode, gesture, wait, actors }) => {
     const app = window.__app;
+    for (let i = 1; i < actors; i++) app.addActor(); // the face/mode/gesture apply to the first (active) actor
     if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
     if (face) app.setFace(face);
-    if (gesture) app.animator.playGesture(gesture);
+    if (gesture) void app.active.gesture(gesture);
     app.advance(wait);
-  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait) });
+  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait), actors: Number(args.actors) });
 
   await mkdir(args.out, { recursive: true });
   for (const view of args.views.split(',')) {

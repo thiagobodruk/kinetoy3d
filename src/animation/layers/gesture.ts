@@ -1,28 +1,37 @@
 // Gesture layer: plays one arm gesture at a time over everything else, with a smooth
 // blend in and out. Stopping early eases out from the current weight (no jumps).
 import * as THREE from 'three';
-import type { BoneName } from '../../character';
+import type { BoneName } from '../../rig/rig';
 import { gestures } from '../gestures';
 import type { Layer, LayerState } from '../layer';
 
 const BLEND_IN = 0.35, BLEND_OUT = 0.45;
 
-interface Playing { name: string; t: number; duration: number; w?: number; stop?: { from: number; t: number } }
+interface Playing { name: string; t: number; duration: number; w?: number; stop?: { from: number; t: number }; done: () => void }
 
 export class GestureLayer implements Layer {
   playing: Playing | null = null;
   private tmp = new THREE.Object3D();
   private shoulderRestY: [number, number] | null = null;
 
-  play(name: string): void {
-    this.playing = { name, t: 0, duration: gestures.get(name).duration };
+  /** Starts a gesture (replacing the current one). Resolves when it ends or is stopped. */
+  play(name: string): Promise<void> {
+    const duration = gestures.get(name).duration;
+    this.playing?.done();
+    return new Promise((done) => { this.playing = { name, t: 0, duration, done }; });
+  }
+
+  private end(): void {
+    const P = this.playing;
+    this.playing = null;
+    P?.done();
   }
 
   /** Ends the gesture with a smooth exit (or right away, with immediate). */
   stop(immediate = false): void {
     const P = this.playing;
     if (!P) return;
-    if (immediate) { this.playing = null; return; }
+    if (immediate) { this.end(); return; }
     if (!P.stop) P.stop = { from: P.w ?? 0, t: 0 }; // leave from the current weight, no jumps
   }
 
@@ -47,10 +56,10 @@ export class GestureLayer implements Layer {
     let w;
     if (P.stop) {
       P.stop.t += dt;
-      if (P.stop.t >= BLEND_OUT) { this.playing = null; return; }
+      if (P.stop.t >= BLEND_OUT) { this.end(); return; }
       w = P.stop.from * (1 - THREE.MathUtils.smootherstep(P.stop.t, 0, BLEND_OUT));
     } else {
-      if (P.t >= P.duration) { this.playing = null; return; }
+      if (P.t >= P.duration) { this.end(); return; }
       w = THREE.MathUtils.smootherstep(P.t, 0, BLEND_IN) * (1 - THREE.MathUtils.smootherstep(P.t, P.duration - BLEND_OUT, P.duration));
     }
     P.w = w;

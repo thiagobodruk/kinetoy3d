@@ -23,6 +23,6 @@ export class BlinkLayer implements Layer {
         this.timer = 2 + random() * 3;
       }
     }
-    s.model.userData.eyes.forEach((e) => { e.scale.y = Math.max(0.08, k * (1 - s.squint)); });
+    s.rig.face.eyes.forEach((e) => { e.scale.y = Math.max(0.08, k * (1 - s.squint)); });
   }
 }

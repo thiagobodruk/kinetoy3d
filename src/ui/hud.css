@@ -3,7 +3,8 @@
   --glass: rgba(255, 255, 255, .78); --shadow: 0 2px 12px rgba(0, 0, 0, .05); }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #f3f4f6; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
 canvas { display: block; }
-#loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
+#loading { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
+#loading.over { background: rgba(243, 244, 246, .6); } /* over the running scene (adding an actor) */
 
 /* HUD: a single slim toolbar of icon buttons, grouped by thin dividers */
 #hud { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content;
@@ -47,7 +48,7 @@ canvas { display: block; }
 @media (max-width: 640px) {
   #hud { bottom: calc(12px + env(safe-area-inset-bottom)); gap: 4px; padding: 6px; border-radius: 16px; flex-wrap: nowrap; }
   #hud.collapsed { left: 12px; }
-  #hud button { width: 48px; height: 48px; border-radius: 12px; font-size: 24px; }
+  #hud button { width: 44px; height: 44px; border-radius: 12px; font-size: 23px; }
   #hud .sep { display: none; }
   #hud .group-head, #hud .reset-narrow { display: grid; }
   #hud .reset-wide { display: none; }

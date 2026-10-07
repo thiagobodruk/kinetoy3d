@@ -1,6 +1,6 @@
 // Visual regression check: compares two sets of renders produced by tools/render.ts.
 //
-//   npm run diff -- <nameA> <nameB> [--out evidence] [--views front,side,back,3q]
+//   npm run diff -- <nameA> <nameB> [--out renders] [--views front,side,back,3q]
 //
 // Writes <nameA>_vs_<nameB>_<view>.png (changed pixels in red) and prints the changed area.
 import { readFile, writeFile } from 'node:fs/promises';
@@ -12,7 +12,7 @@ import { PNG } from 'pngjs';
 const { values: args, positionals: [a, b] } = parseArgs({
   allowPositionals: true,
   options: {
-    out: { type: 'string', default: 'evidence' },
+    out: { type: 'string', default: 'renders' },
     views: { type: 'string', default: 'front,side,back,3q' },
   },
 });

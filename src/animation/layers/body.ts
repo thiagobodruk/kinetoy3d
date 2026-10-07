@@ -1,6 +1,5 @@
 // Body layer: a small state machine that crossfades looping clips through an AnimationMixer.
 import * as THREE from 'three';
-import type { CharacterModel } from '../../character';
 import { clips } from '../clips';
 import type { Layer, LayerState } from '../layer';
 
@@ -26,8 +25,8 @@ export class BodyLayer implements Layer {
   ctx: MotionContext = { moving: false, speed: 0, dancing: false };
   private listeners: StateListener[] = [];
 
-  constructor(model: CharacterModel, readonly fade = 0.28) {
-    this.mixer = new THREE.AnimationMixer(model);
+  constructor(root: THREE.Object3D, readonly fade = 0.28) {
+    this.mixer = new THREE.AnimationMixer(root);
     const action = (name: BodyStateName) => this.mixer.clipAction(clips.get(name).build());
     this.actions = { idle: action('idle'), walk: action('walk'), dance: action('dance') };
     this.set('idle', 0);

@@ -6,8 +6,8 @@
 __pycache__/
 node_modules/
 
-# review captures generated during development (~50 MB)
-evidence/
+# renders from tools/render.ts and tools/diff.ts
+renders/
 
 # local img2threejs pipeline state
 .img2threejs/

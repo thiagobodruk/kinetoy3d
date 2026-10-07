@@ -1,6 +1,6 @@
 // Pose helpers shared by clips and gestures: the rest pose, clip sampling and arm aiming.
 import * as THREE from 'three';
-import type { BoneName } from '../character';
+import type { BoneName } from '../rig/rig';
 
 export const TAU = Math.PI * 2;
 export type V3 = [number, number, number];

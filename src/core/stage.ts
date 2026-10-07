@@ -18,17 +18,22 @@ const KEY_OFFSET = new THREE.Vector3(2.5, 5, 4);
 // on narrow screens (same breakpoint as the mobile HUD) the picture is shifted up by this
 // fraction of the height, so the subject clears the toolbar at the bottom
 const NARROW_WIDTH = 640, NARROW_SHIFT = 0.1;
+// half-size of the shadow frustum around a single subject (grows to fit several)
+const SHADOW_EXTENT = 1.8;
 
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly keyLight: THREE.DirectionalLight;
-  /** Point the key light and its shadow follow (usually the active character). */
+  /** Center and radius of the area the key light's shadow must cover (the actors). */
   readonly focus = new THREE.Vector3();
+  focusRadius = 0;
+  private shadowExtent = SHADOW_EXTENT;
   readonly manual: boolean;
   private updates: UpdateFn[] = [];
   private clock = new THREE.Clock();
+  private raycaster = new THREE.Raycaster();
 
   constructor(container: HTMLElement, { background = 0xf3f4f6, manual = false }: StageOptions = {}) {
     this.manual = manual;
@@ -55,8 +60,8 @@ export class Stage {
     key.castShadow = true;
     // tight shadow frustum around the focus → small texels, no aliasing
     key.shadow.mapSize.set(4096, 4096);
-    key.shadow.camera.left = -1.8; key.shadow.camera.right = 1.8;
-    key.shadow.camera.top = 1.8; key.shadow.camera.bottom = -1.8;
+    key.shadow.camera.left = -SHADOW_EXTENT; key.shadow.camera.right = SHADOW_EXTENT;
+    key.shadow.camera.top = SHADOW_EXTENT; key.shadow.camera.bottom = -SHADOW_EXTENT;
     key.shadow.camera.near = 1; key.shadow.camera.far = 14;
     key.shadow.radius = 4;
     key.shadow.bias = -0.0003;
@@ -115,7 +120,22 @@ export class Stage {
     this.render();
   }
 
+  /** First object under a screen point (client pixels) among `objects`, or null. */
+  pick(clientX: number, clientY: number, objects: THREE.Object3D[]): THREE.Object3D | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.raycaster.intersectObjects(objects, true)[0]?.object ?? null;
+  }
+
   render(): void {
+    const extent = Math.max(SHADOW_EXTENT, this.focusRadius + 1.2);
+    if (extent !== this.shadowExtent) {
+      const cam = this.keyLight.shadow.camera;
+      cam.left = cam.bottom = -extent; cam.right = cam.top = extent;
+      cam.updateProjectionMatrix();
+      this.shadowExtent = extent;
+    }
     this.keyLight.target.position.set(this.focus.x, 0.9, this.focus.z);
     this.keyLight.position.copy(this.keyLight.target.position).add(KEY_OFFSET);
     this.renderer.render(this.scene, this.camera);

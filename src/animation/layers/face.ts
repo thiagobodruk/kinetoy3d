@@ -2,7 +2,7 @@
 // a little posture. Talking expressions open and close the mouth in random syllables and
 // arch the brows for emphasis from time to time.
 import type * as THREE from 'three';
-import type { CharacterModel } from '../../character';
+import type { Rig } from '../../rig/rig';
 import { random } from '../../core/random';
 import type { Layer, LayerState } from '../layer';
 
@@ -18,13 +18,12 @@ export class FaceLayer implements Layer {
   private browTarget = 0;
   private browTimer = 0;     // time left for the current arch
 
-  constructor(model: CharacterModel) {
-    this.browRest = (model.userData.brows || []).map((b) => b.position.clone());
+  constructor(rig: Rig) {
+    this.browRest = rig.face.brows.map((b) => b.position.clone());
   }
 
   update(dt: number, s: LayerState): void {
-    const ud = s.model.userData;
-    if (!ud.mouthMeshes) return;
+    const face = s.rig.face;
     const e = s.expression;
     let openTarget = 0;
     if (e.talk) {
@@ -58,7 +57,7 @@ export class FaceLayer implements Layer {
     f.surprise += (surpriseTarget - f.surprise) * Math.min(1, dt * 7);
 
     // mouth morph targets: 0 = smile, 1 = open (talk), 2 = sad, 3 = "O"
-    ud.mouthMeshes.forEach((m) => {
+    face.mouth.forEach((m) => {
       const o = f.surprise * (1 - f.open); // surprise: "O" mouth (😯)
       if (!m.morphTargetInfluences) return;
       m.morphTargetInfluences[0] = f.smile * (1 - f.open) * (1 - o);
@@ -79,7 +78,7 @@ export class FaceLayer implements Layer {
       this.browTimer = 0.3;
     }
     this.browArch += (this.browTarget - this.browArch) * Math.min(1, dt * 7);
-    (ud.brows || []).forEach((b, i) => {
+    face.brows.forEach((b, i) => {
       const sx = b.userData.side;
       b.position.copy(this.browRest[i]);
       const arch = this.browArch + 2.4 * f.surprise; // surprise: strongly arched brows

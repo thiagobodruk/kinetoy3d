@@ -1,10 +1,10 @@
 // Animation layers: each one adds its part of the pose on top of the previous ones, every frame.
-import type { Bones, CharacterModel } from '../character';
+import type { Bones, Rig } from '../rig/rig';
 import type { ExpressionDef } from './expressions';
 
 /** State shared by the layers of one character. */
 export interface LayerState {
-  readonly model: CharacterModel;
+  readonly rig: Rig;
   readonly bones: Bones;
   /** Current body state (idle, walk, dance…). */
   body: string | null;

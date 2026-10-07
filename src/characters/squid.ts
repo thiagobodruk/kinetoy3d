@@ -1,10 +1,12 @@
-// Procedural character model (vinyl toy style) rebuilt from the model sheet.
+// Squid: the first procedural character (vinyl toy style), rebuilt from the model sheet.
 // Convention: Y up, front along +Z, character's left along +X. Ground at y = 0.
 // Unit: total height ≈ 2.0 — the head takes ~half of it.
 // Organic surfaces (skin, hair, beard, clothes, hands, sneakers) are SDF fields with
 // smooth union, polygonized with Surface Nets. Shirt and pants are SkinnedMeshes.
 import * as THREE from 'three';
-import { ellipsoid, roundCone, torus, roundBox, union, subtract, intersect, custom, transform, polygonize, surfaceZ, field, type Node, type Rotation } from './sdf';
+import type { BoneName, Bones, Rig } from '../rig/rig';
+import { ellipsoid, roundCone, torus, roundBox, union, subtract, intersect, custom, transform, polygonize, surfaceZ, field, type Node, type Rotation } from '../sdf';
+import { defineCharacter, type CharacterInstance } from './registry';
 
 const smoothstep = THREE.MathUtils.smoothstep;
 function smaxSoft(a: number, b: number, k: number): number {
@@ -12,7 +14,8 @@ function smaxSoft(a: number, b: number, k: number): number {
   return Math.max(a, b) + h * h * k * 0.25;
 }
 
-const PALETTE = {
+/** Colors of every part; a variation overrides some of them. */
+export const BASE_PALETTE = {
   skin: 0xe8a37e,
   skinShade: 0xd48a6a,
   nose: 0xf08378,
@@ -28,6 +31,7 @@ const PALETTE = {
   mouth: 0x5a2420,
   tongue: 0x9a4f47,
 };
+export type Palette = { [K in keyof typeof BASE_PALETTE]: number };
 
 function vinyl(color: THREE.ColorRepresentation, opts: THREE.MeshPhysicalMaterialParameters = {}) {
   return new THREE.MeshPhysicalMaterial({
@@ -66,10 +70,8 @@ const BONES = [
   ['legR', 'hips', [-0.16, -0.02, 0]],
   ['kneeR', 'legR', [0, -0.17, 0]],
   ['footR', 'kneeR', [0, -0.17, 0]],
-] as const;
+] as const satisfies readonly (readonly [BoneName, BoneName | null, ...unknown[]])[];
 
-export type BoneName = (typeof BONES)[number][0];
-export type Bones = Record<BoneName, THREE.Bone>;
 type BoneIndex = Record<BoneName, number>;
 
 function buildSkeleton() {
@@ -134,7 +136,7 @@ function headSkinField() {
   return skin;
 }
 
-function headSkinColor() {
+function headSkinColor(PALETTE: Palette) {
   const skin = new THREE.Color(PALETTE.skin), nose = new THREE.Color(PALETTE.nose),
     blush = new THREE.Color(PALETTE.blush), shade = new THREE.Color(PALETTE.skinShade);
   return (x: number, y: number, z: number, out: THREE.Color) => {
@@ -329,11 +331,11 @@ function buildMouth(mats: Materials, surfaceField: Node) {
   return [make('interior', mats.mouth), make('teeth', mats.teeth), make('tongue', mats.tongue)];
 }
 
-function buildHead(mats: Materials, headBone: THREE.Bone) {
+function buildHead(mats: Materials, headBone: THREE.Bone, PALETTE: Palette) {
   const g = new THREE.Group();
   g.name = 'headGeo';
 
-  const skinGeo = polygonize(headSkinField(), { min: [-0.48, -0.08, -0.4], max: [0.48, 0.84, 0.55], cell: 0.0095, color: headSkinColor() });
+  const skinGeo = polygonize(headSkinField(), { min: [-0.48, -0.08, -0.4], max: [0.48, 0.84, 0.55], cell: 0.0095, color: headSkinColor(PALETTE) });
   const skin = new THREE.Mesh(skinGeo, mats.skinVC);
   skin.name = 'headSkin';
   g.add(skin);
@@ -511,7 +513,7 @@ function shoeField() {
 }
 
 // ================= FACTORY =================
-function createMaterials() {
+function createMaterials(PALETTE: Palette) {
   return {
     skin: vinyl(PALETTE.skin),
     skinVC: vinyl(0xffffff, { vertexColors: true }),
@@ -532,18 +534,14 @@ function createMaterials() {
 }
 type Materials = ReturnType<typeof createMaterials>;
 
-/** Parts of the model that the animation layer drives (stored in `root.userData`). */
-export interface CharacterRig {
-  bones: Bones;
-  skeleton: THREE.Skeleton;
-  eyes: THREE.Group[];
-  mouthMeshes: THREE.Mesh[];
-  brows: THREE.Mesh[];
+export interface SquidOptions {
+  /** Color overrides (hex numbers), e.g. { shirt: 0x2b6cd6 }. */
+  palette?: Partial<Palette>;
 }
-export type CharacterModel = THREE.Group & { userData: CharacterRig };
 
-export function createCharacterModel(): CharacterModel {
-  const mats = createMaterials();
+export function createSquid({ palette = {} }: SquidOptions = {}): CharacterInstance {
+  const PALETTE: Palette = { ...BASE_PALETTE, ...palette };
+  const mats = createMaterials(PALETTE);
 
   const root = new THREE.Group();
   root.name = 'Squid';
@@ -696,15 +694,13 @@ export function createCharacterModel(): CharacterModel {
     }
   }
 
-  const { eyes, mouthMeshes, brows } = buildHead(mats, bones.head);
+  const { eyes, mouthMeshes, brows } = buildHead(mats, bones.head, PALETTE);
 
   root.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   // arm skin: no self-shadowing (avoids shadow lines at the elbow/wrist joints)
   root.traverse((o) => { if (/^(upperArm|armMesh)/.test(o.name)) o.receiveShadow = false; });
-  root.userData.bones = bones;
-  root.userData.skeleton = skeleton;
-  root.userData.eyes = eyes;
-  root.userData.mouthMeshes = mouthMeshes;
-  root.userData.brows = brows;
-  return root as CharacterModel;
+  const rig: Rig = { bones, face: { eyes, mouth: mouthMeshes, brows }, fingers: true };
+  return { object: root, rig };
 }
+
+defineCharacter<SquidOptions>({ name: 'squid', create: createSquid, ui: { label: 'Squid', icon: 'user' } });

@@ -1,6 +1,6 @@
 // Arm gestures: one-shot poses that override the arms while they play.
 import type * as THREE from 'three';
-import type { BoneName } from '../character';
+import type { BoneName } from '../rig/rig';
 import type { V3 } from './pose';
 import { Registry, type UiMeta } from './registry';
 
