@@ -1,25 +1,47 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Personagem 3D</title>
+<title>Squid 3D</title>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #eef0f3; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2230; }
+  :root { --ink: #1d2230; --muted: #6b7180; --line: rgba(29, 34, 48, .08); --hover: rgba(29, 34, 48, .06); --active: rgba(29, 34, 48, .1); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f3f4f6; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
   canvas { display: block; }
-  #ui { position: fixed; left: 12px; top: 12px; background: rgba(255,255,255,.85); backdrop-filter: blur(10px); border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); font-size: 12px; max-width: calc(100vw - 24px); }
-  #ui .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
-  #ui h1 { font-size: 13px; margin: 0; }
-  .row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
-  .row .label { width: 46px; color: #556; font-weight: 600; }
-  button { font: inherit; padding: 3px 8px; border-radius: 6px; border: 1px solid #ccd; background: #fff; cursor: pointer; line-height: 1.4; }
-  button.on { background: #e2222b; color: #fff; border-color: #e2222b; }
-  #state { font-weight: 700; color: #e2222b; }
-  .hint { color: #778; font-size: 11px; margin-top: 5px; }
-  #hudToggle { padding: 2px 7px; color: #556; }
-  #hudShow { position: fixed; left: 12px; top: 12px; display: none; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
-  body.hud-hidden #ui { display: none; }
-  body.hud-hidden #hudShow { display: block; }
+
+  /* HUD: a single slim toolbar of icon buttons, grouped by thin dividers */
+  #hud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; display: flex; justify-content: center; align-items: center; gap: 2px; padding: 4px;
+    max-width: calc(100vw - 24px); flex-wrap: wrap;
+    background: rgba(255, 255, 255, .78); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, .05); }
+  #hud .group { display: flex; gap: 2px; }
+  #hud .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  #hud button { position: relative; width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+    border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer;
+    transition: background .15s, color .15s; }
+  #hud button:hover { background: var(--hover); color: var(--ink); }
+  #hud button.on { background: var(--active); color: var(--ink); }
+  #hud button:focus-visible { outline: 2px solid rgba(29, 34, 48, .35); outline-offset: 1px; }
+  /* collapsed: only the toggle stays visible, tucked into the bottom-left corner */
+  #hud.collapsed { left: 16px; transform: none; }
+  #hud.collapsed > :not(#hudToggle) { display: none; }
+
+  /* tooltip from aria-label */
+  #hud button[aria-label]:hover::before { content: attr(aria-label); position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap; padding: 3px 7px; border-radius: 6px; font-size: 11px;
+    background: var(--ink); color: #fff; pointer-events: none; z-index: 2; }
+  #hud.collapsed #hudToggle:hover::before { left: 0; transform: none; }
+
+  /* camera view menu */
+  .menu-wrap { position: relative; }
+  .menu { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: none; min-width: 96px; padding: 4px;
+    background: rgba(255, 255, 255, .92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 16px rgba(0, 0, 0, .08); z-index: 3; }
+  .menu.open { display: block; }
+  #hud .menu button { width: 100%; height: 28px; display: block; text-align: left; padding: 0 10px; font: 12px system-ui, sans-serif; }
+  #hud .menu button:hover::before { content: none; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -29,40 +51,56 @@
 </script>
 </head>
 <body>
-<div id="loading" style="position:fixed;inset:0;display:grid;place-items:center;font-size:15px;color:#667">Gerando modelo…</div>
-<div id="ui">
-  <div class="head">
-    <h1>Estado: <span id="state">idle</span></h1>
-    <button id="hudToggle" title="Ocultar HUD (H)">Ocultar</button>
+<div id="loading">Generating model…</div>
+<nav id="hud">
+  <button id="hudToggle" aria-label="Hide panel (H)"><i class="ph ph-caret-left"></i></button>
+  <span class="sep"></span>
+  <div class="group">
+    <button data-mode="idle" class="on" aria-label="Idle"><i class="ph ph-person-simple"></i></button>
+    <button data-mode="walkInPlace" aria-label="Walk"><i class="ph ph-person-simple-walk"></i></button>
+    <button data-mode="circle" aria-label="Walk in circle"><i class="ph ph-arrows-clockwise"></i></button>
+    <button data-mode="dance" aria-label="Dance (G)"><i class="ph ph-music-notes"></i></button>
   </div>
-  <div class="row">
-    <span class="label">Ações</span>
-    <button id="bIdle" class="on">Idle</button>
-    <button id="bWalk">Andar</button>
-    <button id="bCircle">Andar em círculo</button>
+  <span class="sep"></span>
+  <div class="group">
+    <button data-face="neutral" class="on" aria-label="Neutral face"><i class="ph ph-smiley-blank"></i></button>
+    <button data-face="smile" aria-label="Smile (Y)"><i class="ph ph-smiley"></i></button>
+    <button data-face="talk" aria-label="Talk (T)"><i class="ph ph-chat-teardrop-dots"></i></button>
+    <button data-face="sad" aria-label="Sad (U)"><i class="ph ph-smiley-sad"></i></button>
+    <button data-face="doubt" aria-label="Doubt"><i class="ph ph-smiley-x-eyes"></i></button>
   </div>
-  <div class="row">
-    <span class="label">Rosto</span>
-    <button data-face="neutral" class="on">Neutro</button>
-    <button data-face="smile">Sorrir</button>
-    <button data-face="talk">Falar</button>
+  <span class="sep"></span>
+  <div class="group">
+    <button data-arm="neutral" class="on" aria-label="Arms at rest"><i class="ph ph-hand"></i></button>
+    <button data-arm="thumbsUp" aria-label="Thumbs up (1)"><i class="ph ph-thumbs-up"></i></button>
+    <button data-arm="wave" aria-label="Wave (2)"><i class="ph ph-hand-waving"></i></button>
+    <button data-arm="armUp" aria-label="Raise arm (3)"><i class="ph ph-hand-palm"></i></button>
+    <button data-arm="shrug" aria-label="Shrug (4)"><i class="ph ph-question"></i></button>
   </div>
-  <div class="row">
-    <span class="label">Câmera</span>
-    <button data-view="front" class="on">Frente</button>
-    <button data-view="side">Lado</button>
-    <button data-view="back">Costas</button>
-    <button data-view="3q">3/4</button>
+  <span class="sep"></span>
+  <div class="group">
+    <div class="menu-wrap">
+      <button id="viewMenuBtn" aria-label="Camera view"><i class="ph ph-video-camera"></i></button>
+      <div class="menu" id="viewMenu">
+        <button data-view="front" class="on">Front</button>
+        <button data-view="side">Side</button>
+        <button data-view="back">Back</button>
+        <button data-view="3q">3/4</button>
+      </div>
+    </div>
+    <button id="zoomOut" aria-label="Zoom out (−)"><i class="ph ph-magnifying-glass-minus"></i></button>
+    <button id="zoomIn" aria-label="Zoom in (+)"><i class="ph ph-magnifying-glass-plus"></i></button>
+    <button id="resetBtn" aria-label="Reset scene"><i class="ph ph-arrow-counter-clockwise"></i></button>
   </div>
-  <div class="hint">WASD andar · T falar · Y sorrir · H ocultar HUD · arraste p/ orbitar</div>
-</div>
-<button id="hudShow" title="Exibir HUD (H)">HUD</button>
+</nav>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createCharacterModel } from './character.js';
 import { CharacterStateMachine } from './animations.js';
+
+const $ = (id) => document.getElementById(id);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -84,12 +122,14 @@ camera.position.set(0, 1.2, 6.2);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1.0, 0);
 controls.enableDamping = true;
+controls.minDistance = 1.2;
+controls.maxDistance = 16;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d2c8, 0.8));
 const key = new THREE.DirectionalLight(0xffffff, 1.9);
 key.position.set(2.5, 5, 4);
 key.castShadow = true;
-// frustum de sombra justo em volta do personagem (segue-o em tick) → texels pequenos, sem serrilhado
+// tight shadow frustum around the character (follows it in tick) → small texels, no aliasing
 key.shadow.mapSize.set(4096, 4096);
 key.shadow.camera.left = -1.8; key.shadow.camera.right = 1.8;
 key.shadow.camera.top = 1.8; key.shadow.camera.bottom = -1.8;
@@ -112,33 +152,31 @@ scene.add(ground);
 const character = createCharacterModel();
 scene.add(character);
 const fsm = new CharacterStateMachine(character);
-const stateEl = document.getElementById('state');
-fsm.onChange((s) => { stateEl.textContent = s + ({ smile: ' + sorriso', talk: ' + fala' }[fsm.expression] || ''); });
 
 // ---------- input ----------
 const keys = new Set();
 addEventListener('keydown', (e) => { keys.add(e.code); });
 addEventListener('keyup', (e) => { keys.delete(e.code); });
-let mode = 'idle'; // idle | walkInPlace | circle | free
-const btn = { idle: bIdle, walkInPlace: bWalk, circle: bCircle };
+
+// movement mode: idle | walkInPlace | circle | dance | free
+let mode = 'idle';
+const modeButtons = document.querySelectorAll('[data-mode]');
 function setMode(m) {
   mode = m;
-  Object.entries(btn).forEach(([k, b]) => b.classList.toggle('on', k === m));
+  modeButtons.forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
 }
-bIdle.onclick = () => setMode('idle');
-bWalk.onclick = () => setMode('walkInPlace');
-bCircle.onclick = () => setMode('circle');
-// ocultar/exibir HUD (lembrado entre recargas quando o navegador permite)
-function setHudHidden(hidden) {
-  document.body.classList.toggle('hud-hidden', hidden);
-  try { localStorage.setItem('hudHidden', hidden ? '1' : '0'); } catch (e) {}
+modeButtons.forEach((b) => b.onclick = () => setMode(b.dataset.mode));
+
+// collapse/expand the HUD (remembered across reloads when the browser allows it)
+const hud = $('hud'), hudToggle = $('hudToggle');
+function setHudCollapsed(collapsed) {
+  hud.classList.toggle('collapsed', collapsed);
+  hudToggle.innerHTML = `<i class="ph ph-caret-${collapsed ? 'right' : 'left'}"></i>`;
+  hudToggle.setAttribute('aria-label', `${collapsed ? 'Show' : 'Hide'} panel (H)`);
+  try { localStorage.setItem('hudCollapsed', collapsed ? '1' : '0'); } catch (e) {}
 }
-try { setHudHidden(localStorage.getItem('hudHidden') === '1'); } catch (e) {}
-hudToggle.onclick = () => setHudHidden(true);
-hudShow.onclick = () => setHudHidden(false);
-addEventListener('keydown', (e) => {
-  if (e.code === 'KeyH' && !e.repeat) setHudHidden(!document.body.classList.contains('hud-hidden'));
-});
+try { setHudCollapsed(localStorage.getItem('hudCollapsed') === '1'); } catch (e) {}
+hudToggle.onclick = () => setHudCollapsed(!hud.classList.contains('collapsed'));
 
 const faceButtons = document.querySelectorAll('[data-face]');
 function setFace(name) {
@@ -146,23 +184,65 @@ function setFace(name) {
   faceButtons.forEach((b) => b.classList.toggle('on', b.dataset.face === name));
 }
 faceButtons.forEach((b) => b.onclick = () => setFace(b.dataset.face));
-// atalhos: T alterna fala, Y alterna sorriso
-addEventListener('keydown', (e) => {
-  if (e.repeat) return;
-  if (e.code === 'KeyT') setFace(fsm.expression === 'talk' ? 'neutral' : 'talk');
-  if (e.code === 'KeyY') setFace(fsm.expression === 'smile' ? 'neutral' : 'smile');
-});
 
+const armButtons = document.querySelectorAll('[data-arm]');
+// neutral = rest pose (stops the gesture; the arm eases back)
+armButtons.forEach((b) => b.onclick = () => b.dataset.arm === 'neutral' ? fsm.stopArmAction() : fsm.playArmAction(b.dataset.arm));
+const ARM_KEYS = { Digit1: 'thumbsUp', Digit2: 'wave', Digit3: 'armUp', Digit4: 'shrug' };
+
+// ---------- camera ----------
 const views = { front: [0, 1.2, 6.2], side: [6.2, 1.2, 0], back: [0, 1.2, -6.2], '3q': [4.2, 1.8, 4.6] };
 const viewButtons = document.querySelectorAll('[data-view]');
+const viewMenu = $('viewMenu'), viewMenuBtn = $('viewMenuBtn');
 const setViewButton = (name) => viewButtons.forEach((b) => b.classList.toggle('on', b.dataset.view === name));
-// arrastar para orbitar sai das vistas pré-definidas
+// dragging to orbit leaves the preset views
 controls.addEventListener('start', () => setViewButton(null));
-viewButtons.forEach((b) => b.onclick = () => {
-  setViewButton(b.dataset.view);
-  const v = views[b.dataset.view];
+viewMenuBtn.onclick = (e) => { e.stopPropagation(); viewMenu.classList.toggle('open'); };
+addEventListener('pointerdown', (e) => { if (!viewMenu.contains(e.target) && e.target !== viewMenuBtn) viewMenu.classList.remove('open'); });
+function setView(name) {
+  setViewButton(name);
+  const v = views[name];
   camera.position.set(character.position.x + v[0], v[1], character.position.z + v[2]);
   controls.target.set(character.position.x, 1.0, character.position.z);
+  zoomGoal = null;
+}
+viewButtons.forEach((b) => b.onclick = () => { setView(b.dataset.view); viewMenu.classList.remove('open'); });
+
+// zoom: eases the camera distance toward a goal (each step is ±20%)
+let zoomGoal = null;
+function zoom(factor) {
+  const dist = (zoomGoal ?? camera.position.distanceTo(controls.target)) * factor;
+  zoomGoal = THREE.MathUtils.clamp(dist, controls.minDistance, controls.maxDistance);
+}
+$('zoomIn').onclick = () => zoom(1 / 1.25);
+$('zoomOut').onclick = () => zoom(1.25);
+renderer.domElement.addEventListener('wheel', () => { zoomGoal = null; }, { passive: true });
+
+// reset: front view, character at the origin, standing still, neutral face, no gesture
+function reset() {
+  setMode('idle');
+  setFace('neutral');
+  fsm.stopArmAction(true);
+  if (fsm.current !== 'idle') fsm.set('idle', 0.15);
+  circleAngle = 0;
+  character.position.set(0, 0, 0);
+  character.rotation.set(0, 0, 0);
+  setView('front');
+  controls.update();
+}
+$('resetBtn').onclick = reset;
+
+// ---------- shortcuts ----------
+addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (ARM_KEYS[e.code]) fsm.playArmAction(ARM_KEYS[e.code]);
+  if (e.code === 'KeyH') setHudCollapsed(!hud.classList.contains('collapsed'));
+  if (e.code === 'KeyT') setFace(fsm.expression === 'talk' ? 'neutral' : 'talk');
+  if (e.code === 'KeyY') setFace(fsm.expression === 'smile' ? 'neutral' : 'smile');
+  if (e.code === 'KeyU') setFace(fsm.expression === 'sad' ? 'neutral' : 'sad');
+  if (e.code === 'KeyG') setMode(mode === 'dance' ? 'idle' : 'dance');
+  if (e.code === 'Equal' || e.code === 'NumpadAdd') zoom(1 / 1.25);
+  if (e.code === 'Minus' || e.code === 'NumpadSubtract') zoom(1.25);
 });
 
 const SPEED = 1.1;
@@ -176,7 +256,6 @@ function tick() {
     (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0), 0,
     (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0));
   if (move.lengthSq() > 0 && mode !== 'free') setMode('free');
-  if (mode === 'free' && move.lengthSq() === 0 && !keys.size) { /* fica parado em idle */ }
 
   let moving = false, speed = 0;
   if (mode === 'walkInPlace') { moving = true; speed = SPEED; }
@@ -187,7 +266,7 @@ function tick() {
     character.position.set(Math.sin(circleAngle) * R, 0, Math.cos(circleAngle) * R - R);
     character.rotation.y = circleAngle + Math.PI / 2;
   } else if (mode === 'free' && move.lengthSq() > 0) {
-    // movimento relativo à câmera
+    // camera-relative movement
     const fwd = tmp.subVectors(controls.target, camera.position).setY(0).normalize();
     const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
     const dir = new THREE.Vector3().addScaledVector(right, move.x).addScaledVector(fwd, -move.z).normalize();
@@ -200,7 +279,16 @@ function tick() {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     character.rotation.y += d * Math.min(1, dt * 10);
   }
-  fsm.update(dt, { moving, speed });
+  fsm.update(dt, { moving, speed, dancing: mode === 'dance' });
+  const armNow = (!fsm.armAction?.stop && fsm.armAction?.name) || 'neutral';
+  armButtons.forEach((b) => b.classList.toggle('on', armNow === b.dataset.arm));
+  if (zoomGoal !== null) {
+    const offset = tmp.subVectors(camera.position, controls.target);
+    const dist = offset.length();
+    const next = THREE.MathUtils.lerp(dist, zoomGoal, Math.min(1, dt * 10));
+    camera.position.copy(controls.target).addScaledVector(offset.normalize(), next);
+    if (Math.abs(next - zoomGoal) < 1e-3) zoomGoal = null;
+  }
   key.target.position.set(character.position.x, 0.9, character.position.z);
   key.position.copy(key.target.position).add(KEY_OFFSET);
   controls.update();
@@ -214,7 +302,7 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
-// captura determinística de uma vista (usada pelos gates de revisão; salva em evidence/ via dev_server.py)
+// deterministic capture of a view (used by review gates; saved to evidence/ through dev_server.py)
 async function capture(name, azimuthDeg, { dist = 4.2, height = 1.1, target = 1.0 } = {}) {
   const a = THREE.MathUtils.degToRad(azimuthDeg);
   const c = character.position;
@@ -228,8 +316,8 @@ async function capture(name, azimuthDeg, { dist = 4.2, height = 1.1, target = 1.
   await fetch('/save', { method: 'POST', body: JSON.stringify({ name, data }) });
   return name;
 }
-document.getElementById('loading')?.remove();
-window.__app = { scene, camera, controls, character, fsm, setMode, setFace, renderer, capture };
+$('loading')?.remove();
+window.__app = { scene, camera, controls, character, fsm, setMode, setFace, renderer, capture, reset };
 </script>
 </body>
 </html>

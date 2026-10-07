@@ -1,6 +1,6 @@
-// O projeto carrega o Three.js pela CDN (import map no HTML). O Vite não lê import maps e tentava
-// resolver "three" em node_modules, que não existe. Estes aliases apontam para a MESMA URL do
-// import map, então o Vite deixa o import intacto e o navegador resolve pela CDN.
+// The project loads Three.js from the CDN (import map in the HTML). Vite doesn't read import maps and
+// tried to resolve "three" in node_modules, which doesn't exist. These aliases point to the SAME URL as
+// the import map, so Vite leaves the import untouched and the browser resolves it from the CDN.
 const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0';
 
 export default {

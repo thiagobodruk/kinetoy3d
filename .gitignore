@@ -1,16 +1,16 @@
 # macOS
 .DS_Store
 
-# caches e artefatos locais
+# local caches and artifacts
 .vite/
 __pycache__/
 node_modules/
 
-# capturas de revisão geradas durante o desenvolvimento (~50 MB)
+# review captures generated during development (~50 MB)
 evidence/
 
-# estado local do pipeline img2threejs
+# local img2threejs pipeline state
 .img2threejs/
 
-# configuração local do app Claude
+# local Claude app settings
 .claude/

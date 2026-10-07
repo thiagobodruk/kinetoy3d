@@ -1,4 +1,4 @@
-"""Servidor estático do preview + endpoint POST /save para gravar capturas PNG em evidence/."""
+"""Static preview server + POST /save endpoint that writes PNG captures to evidence/."""
 import base64, http.server, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,7 +10,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*a, directory=ROOT, **kw)
 
     def end_headers(self):
-        # desenvolvimento: nunca reaproveitar módulos JS antigos do cache
+        # development: never reuse stale JS modules from the cache
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
@@ -30,6 +30,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    # porta: argumento > variável PORT (atribuída pelo preview) > 5178
+    # port: argument > PORT variable (set by the preview) > 5178
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 5178))
     http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

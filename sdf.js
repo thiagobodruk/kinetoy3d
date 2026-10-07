@@ -1,6 +1,6 @@
-// Modelagem por campos de distância (SDF) + poligonização por Surface Nets.
-// Permite unir formas com "smooth union", o que dá o aspecto de vinil moldado
-// (cabelo, barba, mãos e roupa como superfícies únicas e contínuas).
+// Signed distance field (SDF) modeling + Surface Nets polygonization.
+// Shapes are joined with "smooth union", which gives the molded-vinyl look
+// (hair, beard, hands and clothes as single continuous surfaces).
 import * as THREE from 'three';
 
 export function smin(a, b, k) {
@@ -10,9 +10,9 @@ export function smin(a, b, k) {
 }
 export const smax = (a, b, k) => -smin(-a, -b, k);
 
-// ---------- nós ----------
+// ---------- nodes ----------
 class Node {
-  // limite inferior da distância (para descartar avaliações longe da superfície)
+  // lower bound of the distance (skips evaluations far from the surface)
   lb(x, y, z) { return Math.hypot(x - this.cx, y - this.cy, z - this.cz) - this.br; }
 }
 
@@ -59,7 +59,7 @@ export function sphere(c, r) {
   return new Prim(c, r, null, (x, y, z) => Math.hypot(x, y, z) - r);
 }
 
-// cone arredondado entre dois pontos (raio r1 em a, r2 em b) — IQ
+// rounded cone between two points (radius r1 at a, r2 at b) — IQ
 export function roundCone(a, b, r1, r2 = r1) {
   const ba = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const l2 = ba[0] * ba[0] + ba[1] * ba[1] + ba[2] * ba[2];
@@ -67,7 +67,7 @@ export function roundCone(a, b, r1, r2 = r1) {
   const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
   const br = Math.sqrt(l2) / 2 + Math.max(r1, r2);
   return new Prim(c, br, null, (x, y, z) => {
-    // coordenadas relativas a "a"
+    // coordinates relative to "a"
     const px = x + c[0] - a[0], py = y + c[1] - a[1], pz = z + c[2] - a[2];
     const yv = px * ba[0] + py * ba[1] + pz * ba[2];
     const z2 = yv - l2;
@@ -82,7 +82,7 @@ export function roundCone(a, b, r1, r2 = r1) {
   });
 }
 
-// toro com eixo Y local
+// torus around the local Y axis
 export function torus(c, R, r, rot, sz = 1) {
   return new Prim(c, R + r, rot, (x, y, z) => {
     const q = Math.hypot(x, z * sz) - R;
@@ -104,7 +104,7 @@ class Union extends Node {
     super();
     this.items = items;
     this.k = k;
-    // esfera envolvente aproximada
+    // approximate bounding sphere
     let cx = 0, cy = 0, cz = 0;
     items.forEach((i) => { cx += i.cx; cy += i.cy; cz += i.cz; });
     cx /= items.length; cy /= items.length; cz /= items.length;
@@ -128,12 +128,12 @@ class Op extends Node {
   constructor(base, fn) { super(); this.base = base; this.fn = fn; Object.assign(this, { cx: base.cx, cy: base.cy, cz: base.cz, br: base.br }); }
   eval(x, y, z) { return this.fn(this.base.eval(x, y, z), x, y, z); }
 }
-// subtração suave: a − b
+// smooth subtraction: a − b
 export const subtract = (a, b, k = 0) => new Op(a, (d, x, y, z) => smax(d, -b.eval(x, y, z), k));
 export const intersect = (a, b, k = 0) => new Op(a, (d, x, y, z) => smax(d, b.eval(x, y, z), k));
 export const custom = (a, fn) => new Op(a, fn);
 
-// ---------- poligonização (Surface Nets) ----------
+// ---------- polygonization (Surface Nets) ----------
 export function polygonize(node, { min, max, cell, color, weights, project = 2, smooth = 0 }) {
   const nx = Math.ceil((max[0] - min[0]) / cell) + 1;
   const ny = Math.ceil((max[1] - min[1]) / cell) + 1;
@@ -141,7 +141,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
   const vals = new Float32Array(nx * ny * nz);
   const idx = (i, j, k) => i + nx * (j + ny * k);
 
-  // pula blocos longe da superfície (o valor do centro já determina o sinal)
+  // skip blocks far from the surface (the center value already decides the sign)
   const B = 4;
   const bnx = Math.ceil(nx / B), bny = Math.ceil(ny / B), bnz = Math.ceil(nz / B);
   const bval = new Float32Array(bnx * bny * bnz);
@@ -161,7 +161,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
     }
   }
 
-  // um vértice por célula cruzada
+  // one vertex per crossing cell
   const cnx = nx - 1, cny = ny - 1, cnz = nz - 1;
   const cellVert = new Int32Array(cnx * cny * cnz).fill(-1);
   const pos = [];
@@ -189,7 +189,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
     pos.push(min[0] + (i + sx / n) * cell, min[1] + (j + sy / n) * cell, min[2] + (k + sz / n) * cell);
   }
 
-  // quads nas arestas da grade com troca de sinal
+  // quads on grid edges with a sign change
   const index = [];
   const cvi = (i, j, k) => cellVert[i + cnx * (j + cny * k)];
   const quad = (a, b, c, d, flip) => {
@@ -214,7 +214,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
     }
   }
 
-  // projeta vértices na superfície e calcula normais pelo gradiente
+  // project vertices onto the surface and compute normals from the gradient
   const h = cell * 0.25;
   const vcount = pos.length / 3;
   const P = new Float32Array(pos);
@@ -236,8 +236,8 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
       const s = THREE.MathUtils.clamp(d, -cell, cell);
       x -= g[0] * s; y -= g[1] * s; z -= g[2] * s;
     }
-    // em quinas (gradiente instável) a projeção pode escorregar pela superfície e criar farpas:
-    // limita o deslocamento total a uma fração da célula
+    // at creases (unstable gradient) the projection can slide along the surface and create spikes:
+    // clamp the total displacement to a fraction of a cell
     const mv = Math.hypot(x - x0, y - y0, z - z0), lim = cell * 0.5;
     if (mv > lim) { const f = lim / mv; x = x0 + (x - x0) * f; y = y0 + (y - y0) * f; z = z0 + (z - z0) * f; }
     grad(x, y, z, g);
@@ -277,7 +277,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
   return geo;
 }
 
-// suavização de Taubin (λ/μ): alisa escadas da grade sem encolher o volume
+// Taubin smoothing (λ/μ): removes grid stair-steps without shrinking the volume
 function taubinSmooth(P, index, vcount, iterations, lambda = 0.5, mu = -0.53) {
   const nbr = Array.from({ length: vcount }, () => new Set());
   for (let i = 0; i < index.length; i += 3) {
@@ -302,11 +302,11 @@ function taubinSmooth(P, index, vcount, iterations, lambda = 0.5, mu = -0.53) {
   for (let i = 0; i < iterations; i++) { pass(lambda); pass(mu); }
 }
 
-// procura a superfície ao longo de +Z (de fora para dentro), útil para apoiar decalques
+// find the surface along +Z (outside in), handy for placing decals
 export function surfaceZ(node, x, y, zFrom = 1, zTo = -1) {
   let a = zFrom, b = zTo;
   if (node.eval(x, y, a) < 0) return a;
-  // marcha até entrar
+  // march until inside
   const step = 0.01;
   let z = a;
   while (z > b && node.eval(x, y, z) > 0) z -= step;
@@ -315,7 +315,7 @@ export function surfaceZ(node, x, y, zFrom = 1, zTo = -1) {
   return (lo + hi) / 2;
 }
 
-// aplica uma transformação rígida (Matrix4) a um nó: avalia no espaço local do nó
+// apply a rigid transform (Matrix4) to a node: evaluates in the node's local space
 class Xform extends Node {
   constructor(base, matrix) {
     super();
