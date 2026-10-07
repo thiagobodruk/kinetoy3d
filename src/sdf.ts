@@ -3,37 +3,50 @@
 // (hair, beard, hands and clothes as single continuous surfaces).
 import * as THREE from 'three';
 
-export function smin(a, b, k) {
+export function smin(a: number, b: number, k: number): number {
   if (k <= 0) return Math.min(a, b);
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.min(a, b) - h * h * k * 0.25;
 }
-export const smax = (a, b, k) => -smin(-a, -b, k);
+export const smax = (a: number, b: number, k: number): number => -smin(-a, -b, k);
+
+export type Vec3 = [number, number, number];
+/** Rotation given as a quaternion or as Euler angles [x, y, z]. */
+export type Rotation = THREE.Quaternion | number[] | null | undefined;
+/** Distance post-processing: receives the base distance and the sample point. */
+export type DistanceFn = (d: number, x: number, y: number, z: number) => number;
 
 // ---------- nodes ----------
-class Node {
+export abstract class Node {
+  // bounding sphere (center + radius)
+  cx = 0; cy = 0; cz = 0; br = 0;
+  abstract eval(x: number, y: number, z: number): number;
   // lower bound of the distance (skips evaluations far from the surface)
-  lb(x, y, z) { return Math.hypot(x - this.cx, y - this.cy, z - this.cz) - this.br; }
+  lb(x: number, y: number, z: number): number { return Math.hypot(x - this.cx, y - this.cy, z - this.cz) - this.br; }
 }
 
-function rotInv(rot) {
+function rotInv(rot: Rotation): number[] | null {
   if (!rot) return null;
   const m = new THREE.Matrix4();
-  if (rot.isQuaternion) m.makeRotationFromQuaternion(rot);
+  if (rot instanceof THREE.Quaternion) m.makeRotationFromQuaternion(rot);
   else m.makeRotationFromEuler(new THREE.Euler(rot[0] || 0, rot[1] || 0, rot[2] || 0));
   const e = m.invert().elements;
   return e;
 }
 
+type LocalFn = (x: number, y: number, z: number) => number;
+
 class Prim extends Node {
-  constructor(c, br, rot, f) {
+  m: number[] | null;
+  f: LocalFn;
+  constructor(c: number[], br: number, rot: Rotation, f: LocalFn) {
     super();
     [this.cx, this.cy, this.cz] = c;
     this.br = br;
     this.m = rotInv(rot);
     this.f = f;
   }
-  eval(x, y, z) {
+  eval(x: number, y: number, z: number): number {
     let dx = x - this.cx, dy = y - this.cy, dz = z - this.cz;
     const m = this.m;
     if (m) {
@@ -46,7 +59,7 @@ class Prim extends Node {
   }
 }
 
-export function ellipsoid(c, r, rot) {
+export function ellipsoid(c: number[], r: number[], rot?: Rotation): Node {
   const [rx, ry, rz] = r;
   return new Prim(c, Math.max(rx, ry, rz), rot, (x, y, z) => {
     const k0 = Math.hypot(x / rx, y / ry, z / rz);
@@ -55,12 +68,12 @@ export function ellipsoid(c, r, rot) {
   });
 }
 
-export function sphere(c, r) {
+export function sphere(c: number[], r: number): Node {
   return new Prim(c, r, null, (x, y, z) => Math.hypot(x, y, z) - r);
 }
 
 // rounded cone between two points (radius r1 at a, r2 at b) — IQ
-export function roundCone(a, b, r1, r2 = r1) {
+export function roundCone(a: number[], b: number[], r1: number, r2 = r1): Node {
   const ba = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const l2 = ba[0] * ba[0] + ba[1] * ba[1] + ba[2] * ba[2];
   const rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1 / l2;
@@ -83,14 +96,14 @@ export function roundCone(a, b, r1, r2 = r1) {
 }
 
 // torus around the local Y axis
-export function torus(c, R, r, rot, sz = 1) {
+export function torus(c: number[], R: number, r: number, rot?: Rotation, sz = 1): Node {
   return new Prim(c, R + r, rot, (x, y, z) => {
     const q = Math.hypot(x, z * sz) - R;
     return Math.hypot(q, y) - r;
   });
 }
 
-export function roundBox(c, half, rad, rot) {
+export function roundBox(c: number[], half: number[], rad: number, rot?: Rotation): Node {
   const [hx, hy, hz] = half;
   return new Prim(c, Math.hypot(hx, hy, hz) + rad, rot, (x, y, z) => {
     const qx = Math.abs(x) - hx, qy = Math.abs(y) - hy, qz = Math.abs(z) - hz;
@@ -100,7 +113,9 @@ export function roundBox(c, half, rad, rot) {
 }
 
 class Union extends Node {
-  constructor(items, k) {
+  items: Node[];
+  k: number;
+  constructor(items: Node[], k: number) {
     super();
     this.items = items;
     this.k = k;
@@ -112,7 +127,7 @@ class Union extends Node {
     items.forEach((i) => { br = Math.max(br, Math.hypot(i.cx - cx, i.cy - cy, i.cz - cz) + i.br); });
     Object.assign(this, { cx, cy, cz, br });
   }
-  eval(x, y, z) {
+  eval(x: number, y: number, z: number): number {
     let d = 1e9;
     const k = this.k;
     for (const it of this.items) {
@@ -122,24 +137,38 @@ class Union extends Node {
     return d;
   }
 }
-export const union = (items, k = 0) => new Union(items.flat(), k);
+export const union = (items: (Node | Node[])[], k = 0): Node => new Union(items.flat(), k);
 
 class Op extends Node {
-  constructor(base, fn) { super(); this.base = base; this.fn = fn; Object.assign(this, { cx: base.cx, cy: base.cy, cz: base.cz, br: base.br }); }
-  eval(x, y, z) { return this.fn(this.base.eval(x, y, z), x, y, z); }
+  base: Node;
+  fn: DistanceFn;
+  constructor(base: Node, fn: DistanceFn) { super(); this.base = base; this.fn = fn; Object.assign(this, { cx: base.cx, cy: base.cy, cz: base.cz, br: base.br }); }
+  eval(x: number, y: number, z: number): number { return this.fn(this.base.eval(x, y, z), x, y, z); }
 }
 // smooth subtraction: a − b
-export const subtract = (a, b, k = 0) => new Op(a, (d, x, y, z) => smax(d, -b.eval(x, y, z), k));
-export const intersect = (a, b, k = 0) => new Op(a, (d, x, y, z) => smax(d, b.eval(x, y, z), k));
-export const custom = (a, fn) => new Op(a, fn);
+export const subtract = (a: Node, b: Node, k = 0): Node => new Op(a, (d, x, y, z) => smax(d, -b.eval(x, y, z), k));
+export const intersect = (a: Node, b: Node, k = 0): Node => new Op(a, (d, x, y, z) => smax(d, b.eval(x, y, z), k));
+export const custom = (a: Node, fn: DistanceFn): Node => new Op(a, fn);
 
 // ---------- polygonization (Surface Nets) ----------
-export function polygonize(node, { min, max, cell, color, weights, project = 2, smooth = 0 }) {
+export interface PolygonizeOptions {
+  min: number[];
+  max: number[];
+  cell: number;
+  /** per-vertex color callback (writes into `out`) */
+  color?: (x: number, y: number, z: number, out: THREE.Color) => void;
+  /** per-vertex skin weights: [[boneIndex, weight], …] */
+  weights?: (x: number, y: number, z: number) => [number, number][];
+  project?: number;
+  smooth?: number;
+}
+
+export function polygonize(node: Node, { min, max, cell, color, weights, project = 2, smooth = 0 }: PolygonizeOptions): THREE.BufferGeometry {
   const nx = Math.ceil((max[0] - min[0]) / cell) + 1;
   const ny = Math.ceil((max[1] - min[1]) / cell) + 1;
   const nz = Math.ceil((max[2] - min[2]) / cell) + 1;
   const vals = new Float32Array(nx * ny * nz);
-  const idx = (i, j, k) => i + nx * (j + ny * k);
+  const idx = (i: number, j: number, k: number) => i + nx * (j + ny * k);
 
   // skip blocks far from the surface (the center value already decides the sign)
   const B = 4;
@@ -164,7 +193,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
   // one vertex per crossing cell
   const cnx = nx - 1, cny = ny - 1, cnz = nz - 1;
   const cellVert = new Int32Array(cnx * cny * cnz).fill(-1);
-  const pos = [];
+  const pos: number[] = [];
   const corner = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
   const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
   const cv = new Float32Array(8);
@@ -190,9 +219,9 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
   }
 
   // quads on grid edges with a sign change
-  const index = [];
-  const cvi = (i, j, k) => cellVert[i + cnx * (j + cny * k)];
-  const quad = (a, b, c, d, flip) => {
+  const index: number[] = [];
+  const cvi = (i: number, j: number, k: number) => cellVert[i + cnx * (j + cny * k)];
+  const quad = (a: number, b: number, c: number, d: number, flip: boolean) => {
     if (a < 0 || b < 0 || c < 0 || d < 0) return;
     if (flip) index.push(a, c, b, a, d, c);
     else index.push(a, b, c, a, c, d);
@@ -219,7 +248,7 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
   const vcount = pos.length / 3;
   const P = new Float32Array(pos);
   const N = new Float32Array(pos.length);
-  const grad = (x, y, z, out) => {
+  const grad = (x: number, y: number, z: number, out: number[]) => {
     out[0] = node.eval(x + h, y, z) - node.eval(x - h, y, z);
     out[1] = node.eval(x, y + h, z) - node.eval(x, y - h, z);
     out[2] = node.eval(x, y, z + h) - node.eval(x, y, z - h);
@@ -278,15 +307,15 @@ export function polygonize(node, { min, max, cell, color, weights, project = 2, 
 }
 
 // Taubin smoothing (λ/μ): removes grid stair-steps without shrinking the volume
-function taubinSmooth(P, index, vcount, iterations, lambda = 0.5, mu = -0.53) {
-  const nbr = Array.from({ length: vcount }, () => new Set());
+function taubinSmooth(P: Float32Array, index: number[], vcount: number, iterations: number, lambda = 0.5, mu = -0.53) {
+  const nbr = Array.from({ length: vcount }, () => new Set<number>());
   for (let i = 0; i < index.length; i += 3) {
     const a = index[i], b = index[i + 1], c = index[i + 2];
     nbr[a].add(b); nbr[a].add(c); nbr[b].add(a); nbr[b].add(c); nbr[c].add(a); nbr[c].add(b);
   }
   const lists = nbr.map((s) => [...s]);
   const tmp = new Float32Array(P.length);
-  const pass = (f) => {
+  const pass = (f: number) => {
     for (let v = 0; v < vcount; v++) {
       const l = lists[v];
       if (!l.length) { tmp[v * 3] = P[v * 3]; tmp[v * 3 + 1] = P[v * 3 + 1]; tmp[v * 3 + 2] = P[v * 3 + 2]; continue; }
@@ -303,7 +332,7 @@ function taubinSmooth(P, index, vcount, iterations, lambda = 0.5, mu = -0.53) {
 }
 
 // find the surface along +Z (outside in), handy for placing decals
-export function surfaceZ(node, x, y, zFrom = 1, zTo = -1) {
+export function surfaceZ(node: Node, x: number, y: number, zFrom = 1, zTo = -1): number {
   let a = zFrom, b = zTo;
   if (node.eval(x, y, a) < 0) return a;
   // march until inside
@@ -317,14 +346,16 @@ export function surfaceZ(node, x, y, zFrom = 1, zTo = -1) {
 
 // apply a rigid transform (Matrix4) to a node: evaluates in the node's local space
 class Xform extends Node {
-  constructor(base, matrix) {
+  base: Node;
+  inv: number[];
+  constructor(base: Node, matrix: THREE.Matrix4) {
     super();
     this.base = base;
     this.inv = matrix.clone().invert().elements;
     const c = new THREE.Vector3(base.cx, base.cy, base.cz).applyMatrix4(matrix);
     Object.assign(this, { cx: c.x, cy: c.y, cz: c.z, br: base.br });
   }
-  eval(x, y, z) {
+  eval(x: number, y: number, z: number): number {
     const e = this.inv;
     return this.base.eval(
       e[0] * x + e[4] * y + e[8] * z + e[12],
@@ -332,4 +363,17 @@ class Xform extends Node {
       e[2] * x + e[6] * y + e[10] * z + e[14]);
   }
 }
-export const transform = (node, matrix) => new Xform(node, matrix);
+// node with a world-space distance function and an explicit bounding sphere
+class FnNode extends Node {
+  f: LocalFn;
+  constructor(c: number[], br: number, f: LocalFn) {
+    super();
+    [this.cx, this.cy, this.cz] = c;
+    this.br = br;
+    this.f = f;
+  }
+  eval(x: number, y: number, z: number): number { return this.f(x, y, z); }
+}
+export const field = (c: number[], br: number, f: LocalFn): Node => new FnNode(c, br, f);
+
+export const transform = (node: Node, matrix: THREE.Matrix4): Node => new Xform(node, matrix);

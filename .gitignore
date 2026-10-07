@@ -14,3 +14,6 @@ evidence/
 
 # local Claude app settings
 .claude/
+
+# build output
+dist/

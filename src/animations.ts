@@ -1,11 +1,16 @@
 // Procedurally generated animation clips (AnimationClip + KeyframeTracks) and a
 // state machine that crossfades between them through an AnimationMixer.
 import * as THREE from 'three';
+import type { BoneName, CharacterModel } from './character';
 
 const TAU = Math.PI * 2;
 
+type V3 = [number, number, number];
+/** Per-bone offsets over REST: rotation (Euler XYZ) and, for the hips, position. */
+type BoneOffsets = Partial<Record<BoneName, { r?: number[]; p?: number[] }>>;
+
 // rest pose of each bone driven by the clips
-const REST = {
+const REST: Partial<Record<BoneName, { p?: V3; r: V3 }>> = {
   hips: { p: [0, 0.52, 0], r: [0, 0, 0] },
   spine: { r: [0, 0, 0] },
   head: { r: [0, 0, 0] },
@@ -23,10 +28,10 @@ const REST = {
 };
 
 // Samples fn(t) -> { bone: { r:[dx,dy,dz], p:[dx,dy,dz] } } as offsets over REST.
-function sampleClip(name, duration, fps, fn) {
+function sampleClip(name: string, duration: number, fps: number, fn: (u: number) => BoneOffsets) {
   const frames = Math.round(duration * fps);
-  const times = [];
-  const data = {};
+  const times: number[] = [];
+  const data: Record<string, { q: number[]; p: number[] }> = {};
   for (const bone of Object.keys(REST)) data[bone] = { q: [], p: [] };
   const e = new THREE.Euler();
   const q = new THREE.Quaternion();
@@ -35,7 +40,7 @@ function sampleClip(name, duration, fps, fn) {
     times.push(t);
     const off = fn(t / duration) || {};
     for (const [bone, rest] of Object.entries(REST)) {
-      const o = off[bone] || {};
+      const o = off[bone as BoneName] || {};
       const r = o.r || [0, 0, 0];
       e.set(rest.r[0] + r[0], rest.r[1] + r[1], rest.r[2] + r[2], 'XYZ');
       q.setFromEuler(e);
@@ -46,7 +51,7 @@ function sampleClip(name, duration, fps, fn) {
       }
     }
   }
-  const tracks = [];
+  const tracks: THREE.KeyframeTrack[] = [];
   for (const [bone, d] of Object.entries(data)) {
     tracks.push(new THREE.QuaternionKeyframeTrack(`${bone}.quaternion`, times, d.q));
     if (d.p.length) tracks.push(new THREE.VectorKeyframeTrack(`${bone}.position`, times, d.p));
@@ -56,7 +61,7 @@ function sampleClip(name, duration, fps, fn) {
 
 // u ∈ [0,1) — every function uses harmonics of 2π·u so the loop closes perfectly.
 export function createIdleClip() {
-  return sampleClip('idle', 3.2, 30, (u) => {
+  return sampleClip('idle', 3.2, 30, (u: number) => {
     const a = TAU * u;
     const breath = Math.sin(a * 2);
     return {
@@ -77,7 +82,7 @@ export function createIdleClip() {
 
 export function createWalkClip() {
   // full cycle = two steps
-  return sampleClip('walk', 0.9, 60, (u) => {
+  return sampleClip('walk', 0.9, 60, (u: number) => {
     const a = TAU * u;
     const s = Math.sin(a);
     const c = Math.cos(a);
@@ -116,7 +121,7 @@ export function createWalkClip() {
 // Feet stay planted: legs and feet offset the hip shift and tilt.
 export function createDanceClip() {
   const LEG = 0.34; // hip → ankle
-  return sampleClip('dance', 2.4, 60, (u) => {
+  return sampleClip('dance', 2.4, 60, (u: number) => {
     const a = TAU * u;
     const b = 0.5 - 0.5 * Math.cos(a * 4);     // 0..1, dips on every beat
     const sw = Math.sin(a * 2);                // side to side every 2 beats
@@ -129,7 +134,7 @@ export function createDanceClip() {
     // step-touch: when the weight shifts onto one leg, the other foot lifts slightly off the
     // ground (thigh forward + knee bend, foot kept almost flat, toe a touch down)
     const liftL = Math.max(0, -sw) ** 3, liftR = Math.max(0, sw) ** 3;
-    const leg = (lift) => ({ thigh: -th - 0.32 * lift, knee: 2 * th + 0.72 * lift });
+    const leg = (lift: number) => ({ thigh: -th - 0.32 * lift, knee: 2 * th + 0.72 * lift });
     const lL = leg(liftL), lR = leg(liftR);
     return {
       hips: { p: [hipX, -drop, 0], r: [0.03 * b, 0.07 * tw, hipTilt] },
@@ -156,26 +161,37 @@ export function createDanceClip() {
 // the elbow only bends — the elbow skin never twists.
 const _v = () => new THREE.Vector3();
 const _m = new THREE.Matrix4();
-function armQuats(sx, dU, dF, palm) {
-  const yF = _v().set(...dF).normalize().negate();
+function armQuats(sx: number, dU: number[], dF: number[], palm: number[]) {
+  const yF = _v().fromArray(dF).normalize().negate();
   // the palm faces the bone's "inside" (−sx on the local x axis): x axis = −sx · palm
-  const xF = _v().set(...palm).multiplyScalar(-sx);
+  const xF = _v().fromArray(palm).multiplyScalar(-sx);
   xF.addScaledVector(yF, -xF.dot(yF)).normalize();
   const zF = _v().crossVectors(xF, yF);
-  const yU = _v().set(...dU).normalize().negate();
+  const yU = _v().fromArray(dU).normalize().negate();
   const xU = xF.clone().addScaledVector(yU, -xF.dot(yU)).normalize();
   const zU = _v().crossVectors(xU, yU);
   const qS = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(xU, yU, zU));
   const qF = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(xF, yF, zF));
   return { s: qS, e: qS.clone().invert().multiply(qF) };
 }
-const N = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
+const N = (x: number, y: number, z: number) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
 
-const ARM_ACTIONS = {
+/** Arm pose returned by a gesture at time t (seconds since it started). */
+interface ArmPose {
+  q?: Partial<Record<BoneName, THREE.Quaternion>>;  // absolute bone rotations
+  r?: Partial<Record<BoneName, V3>>;                // absolute bone rotations (Euler)
+  fingers?: Partial<Record<BoneName, number>>;      // finger curl (rad)
+  thumbs?: Partial<Record<BoneName, number>>;       // thumb rotation (rad)
+  add?: Partial<Record<BoneName, V3>>;              // additive rotations (head, torso)
+  lift?: number;                                    // shoulder raise
+}
+interface ArmActionDef { dur: number; pose: (t: number) => ArmPose }
+
+const ARM_ACTIONS: Record<string, ArmActionDef> = {
   // thumbs up: closed fingers, fist in front, palm inward → thumb up
   thumbsUp: {
     dur: 2.4,
-    pose: (t) => {
+    pose: (t: number) => {
       const pump = 0.08 * Math.sin(Math.min(1, t / 0.6) * Math.PI); // small "ta-da" on arrival
       // arm well forward and forearm nearly level at chest height: the elbow bends little
       // (no "biceps") and the thumb stays clearly visible above the fist
@@ -191,13 +207,13 @@ const ARM_ACTIONS = {
   // wave: hand raised in front of the shoulder, palm forward, swaying side to side
   wave: {
     dur: 2.8,
-    pose: (t) => {
+    pose: (t: number) => {
       const wv = Math.sin(t * Math.PI * 2 * 2) * Math.min(1, t / 0.4);
       // the wave rotates the whole arm around its own axis (at the shoulder): the elbow keeps
       // the same bend and the skin doesn't twist; the forearm sweeps side to side
       const dU = N(-0.5, -0.35, 0.55);
       const q = armQuats(-1, dU, N(-0.08, 1, 0.12), [0, 0, 1]);
-      const swing = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...dU), -0.16 + 0.3 * wv); // offset arc: rotating outward folded the sleeve
+      const swing = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().fromArray(dU), -0.16 + 0.3 * wv); // offset arc: rotating outward folded the sleeve
       return {
         q: { shoulderR: swing.multiply(q.s), elbowR: q.e },
         add: { head: [0, -0.08, -0.06] },
@@ -208,7 +224,7 @@ const ARM_ACTIONS = {
   // (an elbow above the shoulder sank the sleeve into the torso)
   armUp: {
     dur: 2.4,
-    pose: (t) => {
+    pose: (t: number) => {
       const bob = 0.06 * Math.sin(t * Math.PI * 2 * 1.2);
       const q = armQuats(-1, N(-0.8, -0.1 + bob, 0.6), N(-0.12, 1, 0.1), [0, -0.1, 1]); // opened diagonally: the sleeve doesn't sink into the chest
       return {
@@ -233,8 +249,46 @@ const ARM_ACTIONS = {
 };
 
 // ---------- state machine ----------
+type StateName = 'idle' | 'walk' | 'dance';
+export type Expression = 'neutral' | 'smile' | 'talk' | 'sad' | 'doubt';
+/** Per-frame input that drives the state transitions. */
+export interface MotionContext { moving: boolean; speed: number; dancing: boolean }
+interface State { enter: () => void; update: (dt: number, ctx: MotionContext) => void; exit?: () => void }
+interface GestureParams { s: number; e: number; o: number; t: number; w: number }
+type StateListener = (to: StateName | null, from: StateName | null) => void;
+
 export class CharacterStateMachine {
-  constructor(model, { fade = 0.28 } = {}) {
+  model: CharacterModel;
+  fade: number;
+  mixer: THREE.AnimationMixer;
+  actions: Record<StateName, THREE.AnimationAction>;
+  states: Record<StateName, State>;
+  transitions: { from: StateName; to: StateName; when: (ctx: MotionContext) => boolean }[];
+  listeners: StateListener[];
+  current: StateName | null;
+  blinkTimer: number;
+  blinkT: number;
+  expression: Expression;
+  face: { open: number; smile: number; sad: number; doubt: number };
+  syllableTarget: number;
+  syllableTimer: number;
+  phraseTimer: number;
+  pauseTimer: number;
+  eyeSquint: number;
+  browRest: THREE.Vector3[];
+  browArch: number;
+  browTarget: number;
+  browTimer: number;
+  gesture: { sx: number; cur: GestureParams; tgt: GestureParams; timer: number }[];
+  gestureTmp: THREE.Object3D;
+  idleW: number;
+  swayT: number;
+  look: { cur: number; tgt: number; timer: number };
+  armAction: { name: string; t: number; dur: number; w?: number; stop?: { from: number; t: number } } | null;
+  armTmp: THREE.Object3D;
+  shoulderRestY: [number, number] | null;
+
+  constructor(model: CharacterModel, { fade = 0.28 } = {}) {
     this.model = model;
     this.fade = fade;
     this.mixer = new THREE.AnimationMixer(model);
@@ -255,7 +309,7 @@ export class CharacterStateMachine {
       walk: {
         enter: () => {},
         // playback speed follows movement speed
-        update: (dt, ctx) => { this.actions.walk.timeScale = THREE.MathUtils.clamp(ctx.speed / 1.1, 0.5, 2); },
+        update: (_dt, ctx) => { this.actions.walk.timeScale = THREE.MathUtils.clamp(ctx.speed / 1.1, 0.5, 2); },
       },
     };
     // allowed transitions and their conditions
@@ -305,7 +359,7 @@ export class CharacterStateMachine {
     this.shoulderRestY = null;
   }
 
-  playArmAction(name) {
+  playArmAction(name: string) {
     const def = ARM_ACTIONS[name];
     if (def) this.armAction = { name, t: 0, dur: def.dur };
   }
@@ -318,7 +372,7 @@ export class CharacterStateMachine {
     if (!A.stop) A.stop = { from: A.w ?? 0, t: 0 }; // leave from the current weight, no jumps
   }
 
-  updateArmAction(dt) {
+  updateArmAction(dt: number) {
     const bones = this.model.userData.bones;
     if (!this.shoulderRestY) this.shoulderRestY = [bones.shoulderL.position.y, bones.shoulderR.position.y];
     bones.shoulderL.position.y = this.shoulderRestY[0];
@@ -343,25 +397,25 @@ export class CharacterStateMachine {
       w = THREE.MathUtils.smootherstep(A.t, 0, IN) * (1 - THREE.MathUtils.smootherstep(A.t, A.dur - OUT, A.dur));
     }
     A.w = w;
-    const pose = ARM_ACTIONS[A.name].pose(A.t, this);
+    const pose = ARM_ACTIONS[A.name].pose(A.t);
     const tmp = this.armTmp;
-    for (const [bone, q] of Object.entries(pose.q || {})) bones[bone]?.quaternion.slerp(q, w);
+    for (const [bone, q] of Object.entries(pose.q || {})) bones[bone as BoneName]?.quaternion.slerp(q, w);
     for (const [bone, c] of Object.entries(pose.fingers || {})) {
-      const f = bones[bone];
+      const f = bones[bone as BoneName];
       if (f) f.rotation.z = (bone.endsWith('L') ? -1 : 1) * c * w; // bend toward the palm
     }
     for (const [bone, c] of Object.entries(pose.thumbs || {})) {
-      if (bones[bone]) bones[bone].rotation.x = c * w;
+      if (bones[bone as BoneName]) bones[bone as BoneName].rotation.x = c * w;
     }
     for (const [bone, r] of Object.entries(pose.r || {})) {
-      const b = bones[bone];
+      const b = bones[bone as BoneName];
       if (!b) continue;
       tmp.rotation.set(r[0], r[1], r[2]);
       b.quaternion.slerp(tmp.quaternion, w);
     }
     // additive layers (head, torso, raised shoulders)
     for (const [bone, r] of Object.entries(pose.add || {})) {
-      const b = bones[bone];
+      const b = bones[bone as BoneName];
       if (!b) continue;
       b.rotateX(r[0] * w); b.rotateY(r[1] * w); b.rotateZ(r[2] * w);
     }
@@ -371,14 +425,14 @@ export class CharacterStateMachine {
     }
   }
 
-  setExpression(name) {
+  setExpression(name: Expression) {
     this.expression = name;
     this.listeners.forEach((fn) => fn(this.current, this.current));
   }
 
-  onChange(fn) { this.listeners.push(fn); }
+  onChange(fn: StateListener) { this.listeners.push(fn); }
 
-  set(name, fade = this.fade) {
+  set(name: StateName, fade = this.fade) {
     if (this.current === name) return;
     const next = this.actions[name];
     next.reset().setEffectiveWeight(1).play();
@@ -394,17 +448,17 @@ export class CharacterStateMachine {
     this.listeners.forEach((fn) => fn(name, from));
   }
 
-  update(dt, ctx) {
+  update(dt: number, ctx: MotionContext) {
     for (const tr of this.transitions) {
       if (tr.from === this.current && tr.when(ctx)) { this.set(tr.to); break; }
     }
-    this.states[this.current].update(dt, ctx);
+    if (this.current) this.states[this.current].update(dt, ctx);
     this.mixer.update(dt);
     this.updateBlink(dt);
     this.updateFace(dt);
   }
 
-  updateFace(dt) {
+  updateFace(dt: number) {
     const ud = this.model.userData;
     if (!ud.mouthMeshes) return;
     let openTarget = 0, smileTarget = 0;
@@ -443,6 +497,7 @@ export class CharacterStateMachine {
     // mouth morph targets: 0 = smile, 1 = open (talk), 2 = sad, 3 = "O"
     ud.mouthMeshes.forEach((m) => {
       const o = f.doubt * (1 - f.open); // doubt: "O" mouth (😯)
+      if (!m.morphTargetInfluences) return;
       m.morphTargetInfluences[0] = f.smile * (1 - f.open) * (1 - o);
       m.morphTargetInfluences[1] = f.open;
       m.morphTargetInfluences[2] = f.sad * (1 - f.open) * (1 - o);
@@ -484,7 +539,7 @@ export class CharacterStateMachine {
     this.updateArmAction(dt);
   }
 
-  updateIdleLife(dt) {
+  updateIdleLife(dt: number) {
     const bones = this.model.userData.bones;
     const on = this.current === 'idle' && this.expression === 'neutral';
     this.idleW += ((on ? 1 : 0) - this.idleW) * Math.min(1, dt * 2);
@@ -513,7 +568,7 @@ export class CharacterStateMachine {
   // hand gestures while talking. A gesture is a full arm pose (rest + gesture) that
   // overrides idle/walk while talking: when walking, the hands gesture just like in idle,
   // without adding the stride swing (which spun the arm awkwardly).
-  updateGestures(dt) {
+  updateGestures(dt: number) {
     const bones = this.model.userData.bones;
     const talking = this.expression === 'talk';
     const tmp = this.gestureTmp;
@@ -536,24 +591,25 @@ export class CharacterStateMachine {
         g.timer = talking ? (active ? 0.6 + Math.random() * 0.8 : 0.4 + Math.random() * 0.6) : 0.3;
       }
       const k = Math.min(1, dt * 5);
-      for (const key of ['s', 'e', 'o', 't', 'w']) g.cur[key] += (g.tgt[key] - g.cur[key]) * k;
+      for (const key of ['s', 'e', 'o', 't', 'w'] as const) g.cur[key] += (g.tgt[key] - g.cur[key]) * k;
       const w = g.cur.w;
       if (w < 0.001) continue;
       const shName = g.sx > 0 ? 'shoulderL' : 'shoulderR', elName = g.sx > 0 ? 'elbowL' : 'elbowR';
       const sh = bones[shName], el = bones[elName];
+      const rS = REST[shName]!.r, rE = REST[elName]!.r;
       if (!sh || !el) continue;
-      tmp.rotation.set(...REST[shName].r);
+      tmp.rotation.set(rS[0], rS[1], rS[2]);
       tmp.rotateX(g.cur.s);
       tmp.rotateZ(g.sx * g.cur.o);
       sh.quaternion.slerp(tmp.quaternion, w);
-      tmp.rotation.set(...REST[elName].r);
+      tmp.rotation.set(rE[0], rE[1], rE[2]);
       tmp.rotateX(g.cur.e);
       tmp.rotateY(g.sx * g.cur.t);
       el.quaternion.slerp(tmp.quaternion, w);
     }
   }
 
-  updateBlink(dt) {
+  updateBlink(dt: number) {
     const eyes = this.model.userData.eyes;
     if (this.blinkT < 0) {
       this.blinkTimer -= dt;

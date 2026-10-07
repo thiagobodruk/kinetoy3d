@@ -4,18 +4,10 @@
 // Organic surfaces (skin, hair, beard, clothes, hands, sneakers) are SDF fields with
 // smooth union, polygonized with Surface Nets. Shirt and pants are SkinnedMeshes.
 import * as THREE from 'three';
-import { smin, ellipsoid, sphere, roundCone, torus, roundBox, union, subtract, intersect, custom, transform, polygonize, surfaceZ } from './sdf.js';
+import { ellipsoid, roundCone, torus, roundBox, union, subtract, intersect, custom, transform, polygonize, surfaceZ, field, type Node, type Rotation } from './sdf';
 
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 const smoothstep = THREE.MathUtils.smoothstep;
-function smaxSoft(a, b, k) {
+function smaxSoft(a: number, b: number, k: number): number {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.max(a, b) + h * h * k * 0.25;
 }
@@ -37,7 +29,7 @@ const PALETTE = {
   tongue: 0x9a4f47,
 };
 
-function vinyl(color, opts = {}) {
+function vinyl(color: THREE.ColorRepresentation, opts: THREE.MeshPhysicalMaterialParameters = {}) {
   return new THREE.MeshPhysicalMaterial({
     color, roughness: 0.55, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.5, ...opts,
   });
@@ -53,7 +45,7 @@ const FINGER_PIVOT_IN = 0.042;
 // second finger joint (mid-finger), relative to the first: the tip curls in an arc to the palm
 const FINGER_TIP_DY = -0.036, FINGER_AXIS_IN = 0.01;
 // thumb base (elbow-local; positive x = toward the palm)
-const THUMB_PIVOT = [0.023, -0.147, 0.05];
+const THUMB_PIVOT = [0.023, -0.147, 0.05] as const;
 const BONES = [
   ['hips', null, [0, 0.52, 0]],
   ['spine', 'hips', [0, 0, 0]],
@@ -74,31 +66,39 @@ const BONES = [
   ['legR', 'hips', [-0.16, -0.02, 0]],
   ['kneeR', 'legR', [0, -0.17, 0]],
   ['footR', 'kneeR', [0, -0.17, 0]],
-];
+] as const;
+
+export type BoneName = (typeof BONES)[number][0];
+export type Bones = Record<BoneName, THREE.Bone>;
+type BoneIndex = Record<BoneName, number>;
 
 function buildSkeleton() {
-  const bones = {};
-  for (const [name, parent, pos, rot] of BONES) {
+  const bones = {} as Bones;
+  for (const def of BONES) {
+    const [name, parent, pos] = def;
     const b = new THREE.Bone();
     b.name = name;
-    b.position.set(...pos);
-    if (rot) b.rotation.set(...rot);
+    b.position.set(pos[0], pos[1], pos[2]);
+    const rot = def.length > 3 ? def[3] : null;
+    if (rot) b.rotation.set(rot[0], rot[1], rot[2]);
     bones[name] = b;
     if (parent) bones[parent].add(b);
   }
   const list = BONES.map(([n]) => bones[n]);
-  return { bones, list, index: Object.fromEntries(BONES.map(([n], i) => [n, i])) };
+  const index = Object.fromEntries(BONES.map(([n], i) => [n, i])) as BoneIndex;
+  return { bones, list, index };
 }
 
 // world (bind) matrix of a bone — used to bring local fields into character space
-const boneMatrix = (bones, name) => bones[name].matrixWorld.clone();
+const boneMatrix = (bones: Bones, name: BoneName) => bones[name].matrixWorld.clone();
 
 // weights from a "softmin" of the distances to each field group
-function softWeights(groups, tau) {
+type WeightFn = (x: number, y: number, z: number) => [number, number][];
+function softWeights(groups: [number, Node][], tau: number): WeightFn {
   return (x, y, z) => {
     const ds = groups.map(([, node]) => node.eval(x, y, z));
     const m = Math.min(...ds);
-    return groups.map(([bone], i) => [bone, Math.exp(-(ds[i] - m) / tau)]);
+    return groups.map(([bone], i): [number, number] => [bone, Math.exp(-(ds[i] - m) / tau)]);
   };
 }
 
@@ -122,7 +122,7 @@ function headSkinField() {
   for (const sx of [-1, 1]) {
     // ear slightly forward and facing forward (EAR_YAW): visible from the front
     const EAR_YAW = 0.72;
-    const rot = [0, -sx * EAR_YAW, 0];
+    const rot: Rotation = [0, -sx * EAR_YAW, 0];
     const ec = [sx * 0.385, 0.38, -0.05];
     const n = [sx * Math.cos(EAR_YAW), 0, Math.sin(EAR_YAW)]; // ear face normal
     let ear = ellipsoid(ec, [0.036, 0.09, 0.064], rot);
@@ -137,7 +137,7 @@ function headSkinField() {
 function headSkinColor() {
   const skin = new THREE.Color(PALETTE.skin), nose = new THREE.Color(PALETTE.nose),
     blush = new THREE.Color(PALETTE.blush), shade = new THREE.Color(PALETTE.skinShade);
-  return (x, y, z, out) => {
+  return (x: number, y: number, z: number, out: THREE.Color) => {
     out.copy(skin);
     // cheek blush
     for (const sx of [-1, 1]) {
@@ -153,14 +153,14 @@ function headSkinColor() {
 }
 
 function hairField() {
-  const items = [];
+  const items: Node[] = [];
 
   // Main skull core (solid base covering all the skin so there are no holes)
   items.push(ellipsoid([0, 0.57, -0.04], [0.335, 0.24, 0.31])); // Main (wraps the head)
   items.push(ellipsoid([0, 0.46, -0.10], [0.30, 0.20, 0.23])); // Lower nape
   items.push(ellipsoid([0, 0.66, 0.02], [0.26, 0.15, 0.24])); // Top (narrower: lower upper corners)
 
-  const addTuft = (x, y, z, rx, ry = rx, rz = rx, rot = null) => {
+  const addTuft = (x: number, y: number, z: number, rx: number, ry = rx, rz = rx, rot: Rotation = null) => {
     items.push(ellipsoid([x, y, z], [rx, ry, rz], rot));
   };
 
@@ -214,7 +214,7 @@ function hairField() {
 }
 
 function beardField() {
-  const items = [];
+  const items: Node[] = [];
   for (let i = 0; i <= 10; i++) {
     const t = i / 10;
     const a = (t - 0.5) * Math.PI * 0.92;
@@ -245,10 +245,10 @@ function beardField() {
 }
 
 // eyebrow for one side (sx = +1 character's left, −1 right)
-function browField(sx) {
+function browField(sx: number) {
   // smooth continuous tube: many short segments with a smoothly varying radius (no steps/wrinkles)
   const N = 24;
-  const pts = [];
+  const pts: number[][] = [];
   for (let i = 0; i <= N; i++) {
     const t = i / N;
     const x = sx * (0.09 + 0.13 * t);
@@ -258,8 +258,8 @@ function browField(sx) {
     const z = 0.02 + 0.35 * Math.sqrt(Math.max(0, 1 - dx * dx - dy * dy)) + 0.01;
     pts.push([x, y, z]);
   }
-  const radius = (t) => 0.024 - 0.006 * t * t; // tapers smoothly toward the outer tip
-  const items = [];
+  const radius = (t: number) => 0.024 - 0.006 * t * t; // tapers smoothly toward the outer tip
+  const items: Node[] = [];
   for (let i = 0; i < N; i++) items.push(roundCone(pts[i], pts[i + 1], radius(i / N), radius((i + 1) / N)));
   return union(items, 0.006);
 }
@@ -268,7 +268,9 @@ function browField(sx) {
 // An opening drawn on the skin under the mustache. All shapes share the same topology:
 // base = neutral (thin smile line), morph 0 = smile (open D with teeth), morph 1 = talk (open oval),
 // morph 2 = sad (short line with drooping corners), morph 3 = "O" (😯).
-const MOUTH_SHAPES = {
+interface MouthShape { w: number; lift: number; raise: number; depth: number; teeth: number; tongue: number }
+type MouthPart = 'interior' | 'teeth' | 'tongue';
+const MOUTH_SHAPES: Record<string, MouthShape> = {
   // raise: the middle of the upper edge goes UP a little (the upper lip doesn't drop with the jaw)
   neutral: { w: 0.15, lift: 0.012, raise: 0, depth: 0.007, teeth: 0, tongue: 0 },
   smile: { w: 0.178, lift: 0.01, raise: 0.006, depth: 0.05, teeth: 0.34, tongue: 0.18 }, // nearly straight upper edge: "D"-shaped opening
@@ -277,11 +279,11 @@ const MOUTH_SHAPES = {
   // surprise/doubt "O" (😯): small round opening, arched upper edge
   o: { w: 0.075, lift: 0, raise: 0.014, depth: 0.05, teeth: 0, tongue: 0.12 },
 };
-function buildMouth(mats, surfaceField) {
+function buildMouth(mats: Materials, surfaceField: Node) {
   const NU = 28, NV = 8;
   // v: position across the opening (0 = upper edge, 1 = lower edge)
-  const layer = (shape, part) => {
-    const pos = [];
+  const layer = (shape: MouthShape, part: MouthPart) => {
+    const pos: number[] = [];
     for (let j = 0; j <= NV; j++) {
       for (let i = 0; i <= NU; i++) {
         const t = (i / NU) * 2 - 1;
@@ -298,12 +300,12 @@ function buildMouth(mats, surfaceField) {
     }
     return new Float32Array(pos);
   };
-  const index = [];
+  const index: number[] = [];
   for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
     const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
     index.push(a, c, b, b, c, d);
   }
-  const make = (part, mat) => {
+  const make = (part: MouthPart, mat: THREE.Material) => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(layer(MOUTH_SHAPES.neutral, part), 3));
     geo.setIndex(index);
@@ -327,7 +329,7 @@ function buildMouth(mats, surfaceField) {
   return [make('interior', mats.mouth), make('teeth', mats.teeth), make('tongue', mats.tongue)];
 }
 
-function buildHead(mats, headBone) {
+function buildHead(mats: Materials, headBone: THREE.Bone) {
   const g = new THREE.Group();
   g.name = 'headGeo';
 
@@ -372,7 +374,7 @@ function buildHead(mats, headBone) {
   mouthMeshes.forEach((m) => g.add(m));
 
   // small, black, glossy eyes
-  const eyes = [];
+  const eyes: THREE.Group[] = [];
   for (const sx of [-1, 1]) {
     const x = sx * 0.152, y = 0.465;
     const dx = x / 0.355, dy = (y - 0.46) / 0.36;
@@ -423,7 +425,7 @@ function sleeveLocal() {
 }
 
 function pelvisField() { return ellipsoid([0, 0.5, -0.005], [0.29, 0.125, 0.245]); }
-function legField(sx) {
+function legField(sx: number) {
   const x = sx * 0.16;
   return union([
     roundCone([x, 0.47, 0], [x, 0.22, 0.005], 0.128, 0.12),
@@ -434,12 +436,12 @@ function legField(sx) {
 // forearm + hand (elbow-local space). inward = palm direction (toward the body).
 // Fingers are their own shapes, touching and fused with a small radius: the separation shows
 // as soft valleys (vinyl toy), not cuts.
-function handLocal(sx) {
+function handLocal(sx: number) {
   const inward = -sx;
     const palm = ellipsoid([inward * 0.004, -0.262, 0.0], [0.046, 0.068, 0.064]);
   // short chubby fingers, each one continuous piece (no knuckle relief):
   // they grow from inside the palm and taper smoothly to a rounded tip
-  const fingers = [];
+  const fingers: Node[] = [];
   const zs = [0.0435, 0.0145, -0.0145, -0.0435];
   const lens = [0.046, 0.054, 0.051, 0.042];
   zs.forEach((z, i) => {
@@ -454,7 +456,7 @@ function handLocal(sx) {
   const hand = union([palm, fingersU], 0.02); // crisp valleys between the fingers
   // hand ~15% larger, scaled from the wrist (y = −0.2), and raised 0.09 along with the shorter forearm
   const S = 1.15, LIFT = 0.09;
-  const place = (n) => {
+  const place = (n: Node) => {
     const o = custom(n, () => 0);
     o.eval = (x, y, z) => n.eval(x / S, (y - LIFT + 0.2) / S - 0.2, z / S) * S;
     o.cy = (n.cy + 0.2) * S - 0.2 + LIFT; o.br = n.br * S;
@@ -470,8 +472,9 @@ function handLocal(sx) {
 
 // variable-radius tube along a polyline (world points): a continuous arm,
 // no spheres at the joints → no elbow bump. radius(u), u ∈ [0,1] over the total length.
-function tube(pts, radius, k = 0.015) {
-  const segs = [];
+interface TubeSegment { a: number[]; ab: number[]; len: number; s0: number }
+function tube(pts: number[][], radius: (u: number) => number, k = 0.015) {
+  const segs: TubeSegment[] = [];
   let total = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
@@ -480,17 +483,13 @@ function tube(pts, radius, k = 0.015) {
     segs.push({ a, ab, len, s0: total });
     total += len;
   }
-  const segNode = (sg) => {
+  const segNode = (sg: TubeSegment) => {
     const c = [sg.a[0] + sg.ab[0] / 2, sg.a[1] + sg.ab[1] / 2, sg.a[2] + sg.ab[2] / 2];
-    return {
-      cx: c[0], cy: c[1], cz: c[2], br: sg.len / 2 + 0.08,
-      lb(x, y, z) { return Math.hypot(x - this.cx, y - this.cy, z - this.cz) - this.br; },
-      eval(x, y, z) {
-        const px = x - sg.a[0], py = y - sg.a[1], pz = z - sg.a[2];
-        const t = Math.min(1, Math.max(0, (px * sg.ab[0] + py * sg.ab[1] + pz * sg.ab[2]) / (sg.len * sg.len)));
-        return Math.hypot(px - sg.ab[0] * t, py - sg.ab[1] * t, pz - sg.ab[2] * t) - radius((sg.s0 + t * sg.len) / total);
-      },
-    };
+    return field(c, sg.len / 2 + 0.08, (x, y, z) => {
+      const px = x - sg.a[0], py = y - sg.a[1], pz = z - sg.a[2];
+      const t = Math.min(1, Math.max(0, (px * sg.ab[0] + py * sg.ab[1] + pz * sg.ab[2]) / (sg.len * sg.len)));
+      return Math.hypot(px - sg.ab[0] * t, py - sg.ab[1] * t, pz - sg.ab[2] * t) - radius((sg.s0 + t * sg.len) / total);
+    });
   };
   const nodes = segs.map(segNode);
   return { nodes, all: union(nodes, k) };
@@ -512,8 +511,8 @@ function shoeField() {
 }
 
 // ================= FACTORY =================
-export function createCharacterModel() {
-  const mats = {
+function createMaterials() {
+  return {
     skin: vinyl(PALETTE.skin),
     skinVC: vinyl(0xffffff, { vertexColors: true }),
     hair: vinyl(PALETTE.hair, { roughness: 0.78, clearcoat: 0.05 }),
@@ -530,6 +529,21 @@ export function createCharacterModel() {
     lip: vinyl(PALETTE.lip),
     teeth: vinyl(0xf7f4ee, { roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   };
+}
+type Materials = ReturnType<typeof createMaterials>;
+
+/** Parts of the model that the animation layer drives (stored in `root.userData`). */
+export interface CharacterRig {
+  bones: Bones;
+  skeleton: THREE.Skeleton;
+  eyes: THREE.Group[];
+  mouthMeshes: THREE.Mesh[];
+  brows: THREE.Mesh[];
+}
+export type CharacterModel = THREE.Group & { userData: CharacterRig };
+
+export function createCharacterModel(): CharacterModel {
+  const mats = createMaterials();
 
   const root = new THREE.Group();
   root.name = 'Squid';
@@ -584,19 +598,19 @@ export function createCharacterModel() {
   // ---- pants (SkinnedMesh: pelvis → hips, thighs → legs, shins → knees) ----
   const pelvis = pelvisField(), lgL = legField(1), lgR = legField(-1);
   // weight-only fields: thigh above the knee (y 0.33), shin below
-  const thigh = (sx) => roundCone([sx * 0.16, 0.47, 0], [sx * 0.16, 0.34, 0.003], 0.125);
-  const shin = (sx) => roundCone([sx * 0.16, 0.32, 0.003], [sx * 0.16, 0.2, 0.005], 0.12);
+  const thigh = (sx: number) => roundCone([sx * 0.16, 0.47, 0], [sx * 0.16, 0.34, 0.003], 0.125);
+  const shin = (sx: number) => roundCone([sx * 0.16, 0.32, 0.003], [sx * 0.16, 0.2, 0.005], 0.12);
   const pantsGeo = polygonize(union([pelvis, lgL, lgR], 0.05), {
     min: [-0.36, 0.14, -0.3], max: [0.36, 0.66, 0.3], cell: 0.009,
     weights: (() => {
       const legs = softWeights([[index.legL, thigh(1)], [index.kneeL, shin(1)], [index.legR, thigh(-1)], [index.kneeR, shin(-1)]], 0.03);
       const hipLeg = softWeights([[index.hips, pelvis], [-1, lgL], [-2, lgR]], 0.02);
       // pelvis × leg; the "leg" part is split between thigh and shin
-      return (x, y, z) => {
+      return (x: number, y: number, z: number): [number, number][] => {
         const hw = hipLeg(x, y, z), lw = legs(x, y, z);
         const sumH = hw.reduce((a, [, w]) => a + w, 0), sumL = lw.reduce((a, [, w]) => a + w, 0);
         const wh = hw[0][1] / sumH, wl = 1 - wh;
-        return [[index.hips, wh], ...lw.map(([b, w]) => [b, (wl * w) / sumL])];
+        return [[index.hips, wh], ...lw.map(([b, w]): [number, number] => [b, (wl * w) / sumL])];
       };
     })(),
   });
@@ -609,30 +623,30 @@ export function createCharacterModel() {
   for (const sx of [1, -1]) {
     const sh = sx > 0 ? 'shoulderL' : 'shoulderR', el = sx > 0 ? 'elbowL' : 'elbowR';
     const mS = boneMatrix(bones, sh), mE = boneMatrix(bones, el);
-    const at = (m, p) => new THREE.Vector3(...p).applyMatrix4(m).toArray();
+    const at = (m: THREE.Matrix4, p: number[]) => new THREE.Vector3(...p).applyMatrix4(m).toArray();
     // shoulder → elbow → wrist (inside the palm): nearly cylindrical, tapering slightly,
     // with a subtle forearm volume
-    const { nodes: [segU, segF], all: tubeArm } = tube(
+    const { nodes: [, segF], all: tubeArm } = tube(
       [at(mS, [0, -0.11, 0]), at(mS, [0, -0.25, 0]), at(mE, [0, -0.15, 0])],
-      (u) => 0.066 - 0.017 * Math.pow(u, 1.4) + 0.0025 * Math.exp(-(((u - 0.68) / 0.14) ** 2)));
+      (u: number) => 0.066 - 0.017 * Math.pow(u, 1.4) + 0.0025 * Math.exp(-(((u - 0.68) / 0.14) ** 2)));
     const H = handLocal(sx);
     const hand = transform(H.hand, mE);
     const fg = sx > 0 ? 'fingersL' : 'fingersR', ft = sx > 0 ? 'fingerTipsL' : 'fingerTipsR', th = sx > 0 ? 'thumbL' : 'thumbR';
-    const upper = segU, fore = union([segF, transform(H.palmW, mE)], 0.02), fingersW = transform(H.fingerW, mE), fingerTipW = transform(H.fingerTipW, mE);
+    const fore = union([segF, transform(H.palmW, mE)], 0.02), fingersW = transform(H.fingerW, mE), fingerTipW = transform(H.fingerTipW, mE);
     // top of the arm cut well inside the sleeve (local y −0.12; the sleeve reaches −0.16):
     // when the arm swings, no skin shows through
     const iS = mS.clone().invert().elements;
     // fingers: same shoulder/elbow split, and the elbow part is shared
     // between hand, fingers and fingertips
     const handSplit = softWeights([[index[el], fore], [index[fg], fingersW], [index[ft], fingerTipW]], 0.006);
-    const armW = (x, y, z) => {
+    const armW = (x: number, y: number, z: number): [number, number][] => {
       const wh = handSplit(x, y, z), sh2 = wh.reduce((a, [, w]) => a + w, 0);
       // shoulder × elbow by position along the arm: a long symmetric transition around the
       // elbow (local y −0.25) starting at the sleeve hem → the arm leaves the center of the
       // (rigid) sleeve and the bend stays smooth, with no bump
       const ly = iS[1] * x + iS[5] * y + iS[9] * z + iS[13];
       const we = smoothstep(-ly, 0.165, 0.335);
-      return [[index[sh], 1 - we], ...wh.map(([b, w]) => [b, (we * w) / sh2])];
+      return [[index[sh], 1 - we], ...wh.map(([b, w]): [number, number] => [b, (we * w) / sh2])];
     };
     const arm = custom(union([tubeArm, hand], 0.02), (d, x, y, z) =>
       Math.max(d, iS[1] * x + iS[5] * y + iS[9] * z + iS[13] + 0.12));
@@ -673,8 +687,8 @@ export function createCharacterModel() {
     const bone = bones[sx > 0 ? 'footL' : 'footR'];
     const { upper, sole } = shoeField();
     const box = { min: [-0.18, -0.01, -0.22], max: [0.18, 0.22, 0.3], cell: 0.0065 };
-    for (const [field, mat, n] of [[upper, mats.shoe, 'shoeUpper'], [sole, mats.sole, 'shoeSole']]) {
-      const g = polygonize(field, box);
+    for (const [shape, mat, n] of [[upper, mats.shoe, 'shoeUpper'], [sole, mats.sole, 'shoeSole']] as const) {
+      const g = polygonize(shape, box);
       g.translate(0, -0.16, 0.04);
       const m = new THREE.Mesh(g, mat);
       m.name = n + (sx > 0 ? 'L' : 'R');
@@ -684,7 +698,7 @@ export function createCharacterModel() {
 
   const { eyes, mouthMeshes, brows } = buildHead(mats, bones.head);
 
-  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  root.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   // arm skin: no self-shadowing (avoids shadow lines at the elbow/wrist joints)
   root.traverse((o) => { if (/^(upperArm|armMesh)/.test(o.name)) o.receiveShadow = false; });
   root.userData.bones = bones;
@@ -692,5 +706,5 @@ export function createCharacterModel() {
   root.userData.eyes = eyes;
   root.userData.mouthMeshes = mouthMeshes;
   root.userData.brows = brows;
-  return root;
+  return root as CharacterModel;
 }

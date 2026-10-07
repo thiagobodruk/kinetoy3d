@@ -1,0 +1,36 @@
+{
+  "name": "kinetoy3d",
+  "version": "1.1.0",
+  "description": "A framework for procedural 3D vinyl-toy characters, actions and scripted scenes, built with Three.js.",
+  "license": "MIT",
+  "author": "Thiago Bodruk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thiagobodruk/kinetoy3d.git"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "render": "tsx tools/render.ts",
+    "diff": "tsx tools/diff.ts"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "^2.1.1",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/pngjs": "^6.0.5",
+    "@types/three": "^0.160.0",
+    "pixelmatch": "^8.0.0",
+    "playwright-core": "^1.63.0",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3"
+  }
+}
