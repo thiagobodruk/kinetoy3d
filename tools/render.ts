@@ -35,7 +35,7 @@ const { values: args } = parseArgs({
 let server: ViteDevServer | null = null;
 let url = args.url;
 if (!url) {
-  server = await createServer({ server: { port: 0 }, logLevel: 'warn' });
+  server = await createServer({ server: { port: 0, strictPort: false }, logLevel: 'warn' });
   await server.listen();
   url = server.resolvedUrls?.local[0];
   if (!url) throw new Error('Could not start the Vite dev server');
@@ -61,8 +61,8 @@ try {
   await page.evaluate(({ face, mode, gesture, wait }) => {
     const app = window.__app;
     if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
-    if (face) app.setFace(face as Parameters<typeof app.setFace>[0]);
-    if (gesture) app.fsm.playArmAction(gesture);
+    if (face) app.setFace(face);
+    if (gesture) app.animator.playGesture(gesture);
     app.advance(wait);
   }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait) });
 

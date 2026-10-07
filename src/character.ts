@@ -276,7 +276,7 @@ const MOUTH_SHAPES: Record<string, MouthShape> = {
   smile: { w: 0.178, lift: 0.01, raise: 0.006, depth: 0.05, teeth: 0.34, tongue: 0.18 }, // nearly straight upper edge: "D"-shaped opening
   open: { w: 0.14, lift: 0.012, raise: 0.006, depth: 0.09, teeth: 0.2, tongue: 0.32 },
   sad: { w: 0.13, lift: -0.02, raise: 0.003, depth: 0.008, teeth: 0, tongue: 0 },
-  // surprise/doubt "O" (😯): small round opening, arched upper edge
+  // surprise "O" (😯): small round opening, arched upper edge
   o: { w: 0.075, lift: 0, raise: 0.014, depth: 0.05, teeth: 0, tongue: 0.12 },
 };
 function buildMouth(mats: Materials, surfaceField: Node) {

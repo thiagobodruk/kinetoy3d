@@ -4,14 +4,17 @@
 //   ?seed=N   repeatable random choices (blinks, glances, talk)
 //   ?manual   no real-time loop; time only moves through __app.advance(seconds)
 import '@phosphor-icons/web/regular/style.css';
-import { CharacterStateMachine, type Expression } from './animations';
-import { Locomotion, type Mode } from './behaviors/locomotion';
+import './library';
+import { Animator } from './animation/animator';
+import { expressions } from './animation/expressions';
+import { gestures } from './animation/gestures';
+import { Locomotion, MODES, type Mode } from './behaviors/locomotion';
 import { createCharacterModel } from './character';
 import { CameraRig, type ViewName } from './core/camera';
 import { Keyboard } from './core/keyboard';
 import { setSeed } from './core/random';
 import { Stage } from './core/stage';
-import { Hud, ZOOM_STEP } from './ui/hud';
+import { Hud, REST_ARMS, ZOOM_STEP } from './ui/hud';
 
 const params = new URLSearchParams(location.search);
 if (params.has('seed')) setSeed(Number(params.get('seed')));
@@ -25,18 +28,18 @@ const keyboard = new Keyboard();
 
 const character = createCharacterModel();
 stage.scene.add(character);
-const fsm = new CharacterStateMachine(character);
+const animator = new Animator(character);
 const locomotion = new Locomotion(character, cameraRig, keyboard);
 
 // ---------- actions ----------
 function setMode(mode: Mode) { locomotion.setMode(mode); }
-function setFace(face: Expression) {
-  fsm.setExpression(face);
-  hud.showFace(face);
+function setFace(name: string) {
+  animator.setExpression(name);
+  hud.showFace(name);
 }
 function playArm(name: string) {
-  if (name === 'neutral') fsm.stopArmAction(); // the arm eases back to rest
-  else fsm.playArmAction(name);
+  if (name === REST_ARMS) animator.stopGesture(); // the arm eases back to rest
+  else animator.playGesture(name);
 }
 function setView(view: ViewName) {
   cameraRig.setView(view, character.position);
@@ -46,36 +49,40 @@ function setView(view: ViewName) {
 function reset() {
   locomotion.reset();
   setFace('neutral');
-  fsm.stopArmAction(true);
-  if (fsm.current !== 'idle') fsm.set('idle', 0.15);
+  animator.stopGesture(true);
+  if (animator.bodyState !== 'idle') animator.setBodyState('idle', 0.15);
   setView('front');
   cameraRig.controls.update();
 }
 
-const hud = new Hud(document.getElementById('hud')!, {
-  mode: setMode, face: setFace, arm: playArm, view: setView, zoom: (f) => cameraRig.zoom(f), reset,
-});
+const hud = new Hud(document.getElementById('hud')!,
+  { modes: MODES, faces: expressions.list(), gestures: gestures.list() },
+  { mode: (m) => setMode(m as Mode), face: setFace, arm: playArm, view: setView, zoom: (f) => cameraRig.zoom(f), reset });
 locomotion.onModeChange((mode) => hud.showMode(mode));
 cameraRig.onUserOrbit(() => hud.showView(null)); // dragging leaves the preset views
+hud.showMode(locomotion.mode);
+hud.showFace(animator.expression);
+hud.showView('front');
 
-// ---------- shortcuts ----------
-const ARM_KEYS: Record<string, string> = { Digit1: 'thumbsUp', Digit2: 'wave', Digit3: 'armUp', Digit4: 'shrug' };
-const FACE_KEYS: Record<string, Expression> = { KeyT: 'talk', KeyY: 'smile', KeyU: 'sad' };
+// ---------- shortcuts (from the `ui.key` of each definition) ----------
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
-  if (ARM_KEYS[e.code]) fsm.playArmAction(ARM_KEYS[e.code]);
-  const face = FACE_KEYS[e.code];
-  if (face) setFace(fsm.expression === face ? 'neutral' : face); // each face key toggles
-  if (e.code === 'KeyH') hud.toggleCollapsed();
-  if (e.code === 'KeyG') setMode(locomotion.mode === 'dance' ? 'idle' : 'dance');
-  if (e.code === 'Equal' || e.code === 'NumpadAdd') cameraRig.zoom(1 / ZOOM_STEP);
-  if (e.code === 'Minus' || e.code === 'NumpadSubtract') cameraRig.zoom(ZOOM_STEP);
+  const key = e.code;
+  const gesture = gestures.list().find((g) => g.ui?.key === key);
+  if (gesture) animator.playGesture(gesture.name);
+  const face = expressions.list().find((x) => x.ui?.key === key);
+  if (face) setFace(animator.expression === face.name ? 'neutral' : face.name); // face keys toggle
+  const mode = MODES.find((m) => m.ui.key === key);
+  if (mode) setMode(locomotion.mode === mode.name ? 'idle' : mode.name);   // mode keys toggle
+  if (key === 'KeyH') hud.toggleCollapsed();
+  if (key === 'Equal' || key === 'NumpadAdd') cameraRig.zoom(1 / ZOOM_STEP);
+  if (key === 'Minus' || key === 'NumpadSubtract') cameraRig.zoom(ZOOM_STEP);
 });
 
 // ---------- frame loop ----------
 stage.onUpdate((dt) => {
-  fsm.update(dt, locomotion.update(dt));
-  hud.showArm((!fsm.armAction?.stop && fsm.armAction?.name) || 'neutral');
+  animator.update(dt, locomotion.update(dt));
+  hud.showArm(animator.activeGesture ?? REST_ARMS);
   cameraRig.update(dt);
   stage.focus.copy(character.position);
 });
@@ -91,7 +98,7 @@ function capture(azimuthDeg: number, opts: { dist?: number; height?: number; tar
 
 const app = {
   stage, scene: stage.scene, camera: stage.camera, renderer: stage.renderer, controls: cameraRig.controls,
-  character, fsm, locomotion, setMode, setFace, reset, capture,
+  character, animator, locomotion, setMode, setFace, reset, capture,
   /** Advances time in fixed steps (for ?manual). */
   advance: (seconds: number) => stage.advance(seconds),
 };

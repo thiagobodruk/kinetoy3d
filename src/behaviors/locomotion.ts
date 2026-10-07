@@ -1,11 +1,20 @@
 // Moves a character around the stage and tells the animation layer what it's doing.
 //   idle · walkInPlace · circle (walks a fixed circle) · dance · free (WASD, camera-relative)
 import * as THREE from 'three';
-import type { MotionContext } from '../animations';
+import type { MotionContext } from '../animation/animator';
+import type { UiMeta } from '../animation/registry';
 import type { CameraRig } from '../core/camera';
 import type { Keyboard } from '../core/keyboard';
 
 export type Mode = 'idle' | 'walkInPlace' | 'circle' | 'dance' | 'free';
+
+/** Modes offered in the HUD ('free' starts by itself when a movement key is pressed). */
+export const MODES: { name: Exclude<Mode, 'free'>; ui: UiMeta }[] = [
+  { name: 'idle', ui: { label: 'Idle', icon: 'person-simple' } },
+  { name: 'walkInPlace', ui: { label: 'Walk', icon: 'person-simple-walk' } },
+  { name: 'circle', ui: { label: 'Walk in circle', icon: 'arrows-clockwise' } },
+  { name: 'dance', ui: { label: 'Dance', icon: 'music-notes', key: 'KeyG' } },
+];
 
 const SPEED = 1.1;
 const CIRCLE_RADIUS = 1.6;

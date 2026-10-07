@@ -15,6 +15,9 @@ export interface StageOptions {
 
 // key light offset from the focus point; the light (and its tight shadow frustum) follows the focus
 const KEY_OFFSET = new THREE.Vector3(2.5, 5, 4);
+// on narrow screens (same breakpoint as the mobile HUD) the picture is shifted up by this
+// fraction of the height, so the subject clears the toolbar at the bottom
+const NARROW_WIDTH = 640, NARROW_SHIFT = 0.1;
 
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
@@ -69,11 +72,20 @@ export class Stage {
     ground.receiveShadow = true;
     scene.add(ground);
 
+    this.fitFraming();
     addEventListener('resize', () => {
-      this.camera.aspect = innerWidth / innerHeight;
-      this.camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+      this.fitFraming();
     });
+  }
+
+  // aspect + screen-space shift (moves the picture without changing where the camera looks)
+  private fitFraming(): void {
+    const w = innerWidth, h = innerHeight;
+    this.camera.aspect = w / h;
+    if (w <= NARROW_WIDTH) this.camera.setViewOffset(w, h, 0, h * NARROW_SHIFT, w, h);
+    else this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
   }
 
   /** Registers a per-frame callback (runs in registration order). */

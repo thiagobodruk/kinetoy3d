@@ -2,53 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>KineToy 3D</title>
 <link rel="stylesheet" href="./src/ui/hud.css">
 </head>
 <body>
 <div id="loading">Generating model…</div>
-<nav id="hud">
-  <button id="hudToggle" aria-label="Hide panel (H)"><i class="ph ph-caret-left"></i></button>
-  <span class="sep"></span>
-  <div class="group">
-    <button data-mode="idle" class="on" aria-label="Idle"><i class="ph ph-person-simple"></i></button>
-    <button data-mode="walkInPlace" aria-label="Walk"><i class="ph ph-person-simple-walk"></i></button>
-    <button data-mode="circle" aria-label="Walk in circle"><i class="ph ph-arrows-clockwise"></i></button>
-    <button data-mode="dance" aria-label="Dance (G)"><i class="ph ph-music-notes"></i></button>
-  </div>
-  <span class="sep"></span>
-  <div class="group">
-    <button data-face="neutral" class="on" aria-label="Neutral face"><i class="ph ph-smiley-blank"></i></button>
-    <button data-face="smile" aria-label="Smile (Y)"><i class="ph ph-smiley"></i></button>
-    <button data-face="talk" aria-label="Talk (T)"><i class="ph ph-chat-teardrop-dots"></i></button>
-    <button data-face="sad" aria-label="Sad (U)"><i class="ph ph-smiley-sad"></i></button>
-    <button data-face="doubt" aria-label="Doubt"><i class="ph ph-smiley-x-eyes"></i></button>
-  </div>
-  <span class="sep"></span>
-  <div class="group">
-    <button data-arm="neutral" class="on" aria-label="Arms at rest"><i class="ph ph-hand"></i></button>
-    <button data-arm="thumbsUp" aria-label="Thumbs up (1)"><i class="ph ph-thumbs-up"></i></button>
-    <button data-arm="wave" aria-label="Wave (2)"><i class="ph ph-hand-waving"></i></button>
-    <button data-arm="armUp" aria-label="Raise arm (3)"><i class="ph ph-hand-palm"></i></button>
-    <button data-arm="shrug" aria-label="Shrug (4)"><i class="ph ph-question"></i></button>
-  </div>
-  <span class="sep"></span>
-  <div class="group">
-    <div class="menu-wrap">
-      <button id="viewMenuBtn" aria-label="Camera view"><i class="ph ph-video-camera"></i></button>
-      <div class="menu" id="viewMenu">
-        <button data-view="front" class="on">Front</button>
-        <button data-view="side">Side</button>
-        <button data-view="back">Back</button>
-        <button data-view="3q">3/4</button>
-      </div>
-    </div>
-    <button id="zoomOut" aria-label="Zoom out (−)"><i class="ph ph-magnifying-glass-minus"></i></button>
-    <button id="zoomIn" aria-label="Zoom in (+)"><i class="ph ph-magnifying-glass-plus"></i></button>
-    <button id="resetBtn" aria-label="Reset scene"><i class="ph ph-arrow-counter-clockwise"></i></button>
-  </div>
-</nav>
+<nav id="hud"></nav>
 <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # KineToy 3D
 
-A framework for procedural 3D characters in the style of vinyl toys, built with [Three.js](https://threejs.org/) and no 3D modeling tool. Every surface is written in code as a signed distance field (SDF). The fields are joined with smooth unions, turned into meshes at load time, rigged to a skeleton and animated by a small state machine.
+A framework for procedural 3D characters in the style of vinyl toys, built with [Three.js](https://threejs.org/) and no 3D modeling tool. Every surface is written in code as a signed distance field (SDF). The fields are joined with smooth unions, turned into meshes at load time, rigged to a skeleton and animated by stacked procedural layers.
 
 Its first character is **Squid**. There's no model file to download: the whole character is generated in the browser when the page opens.
 
@@ -30,10 +30,14 @@ Then open <http://localhost:5178>.
 
 The HUD is a single toolbar at the bottom center of the screen. Hover over a button to see its name and shortcut. The `‹` button collapses the toolbar into a small `›` button in the bottom-left corner.
 
+On narrow screens (phones), the toolbar shows one large button per group, with the icon of the active option. Tapping a group opens its options in a tray above the bar; picking an option or tapping outside closes it.
+
+The buttons are generated from the registered modes, expressions and gestures (see [Adding expressions and gestures](#adding-expressions-and-gestures)).
+
 | Group | Buttons | Shortcuts |
 | --- | --- | --- |
 | **Actions** | Idle · Walk (in place) · Walk in circle · Dance | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
-| **Face** | Neutral · Smile · Talk · Sad · Doubt | `Y` smile, `T` talk, `U` sad (each one toggles) |
+| **Face** | Neutral · Smile · Talk · Sad · Surprise | `Y` smile, `T` talk, `U` sad (each one toggles) |
 | **Arms** | Rest · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
 | **Camera** | View menu (Front / Side / Back / 3/4) · Zoom out · Zoom in · Reset | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
 | **Panel** | Collapse / expand | `H` |
@@ -46,12 +50,21 @@ The face, the arms and the actions are independent layers, so they can be combin
 
 ```
 .
-├── index.html              # Page markup (HUD toolbar)
+├── index.html              # Page shell (the HUD is generated)
 ├── src/
-│   ├── main.ts             # Demo app: wires the stage, character, HUD and keyboard together
+│   ├── main.ts             # Demo app: wires the stage, character, animator, HUD and keyboard
 │   ├── character.ts        # Procedural model: skeleton, SDF fields, meshes, skinning, materials
-│   ├── animations.ts       # Procedural clips, arm gestures, facial layers and the state machine
 │   ├── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
+│   ├── animation/          # Animation engine (character-agnostic)
+│   │   ├── animator.ts     # Stacks the layers for one character; public API
+│   │   ├── layer.ts        # Layer interface and the state shared by the layers
+│   │   ├── layers/         # body · blink · face · talk-gestures · idle-life · gesture
+│   │   ├── registry.ts     # Named definitions + HUD metadata
+│   │   ├── clips.ts        # Clip definitions (defineClip)
+│   │   ├── gestures.ts     # Gesture definitions (defineGesture)
+│   │   ├── expressions.ts  # Expression definitions (defineExpression)
+│   │   └── pose.ts         # Rest pose, clip sampling, arm aiming helpers
+│   ├── library/            # Built-in content: clips, gestures, expressions
 │   ├── core/
 │   │   ├── stage.ts        # Renderer, scene, lights, ground and the frame loop (real-time or manual)
 │   │   ├── camera.ts       # Orbit camera: preset views, zoom steps, fixed shots for renders
@@ -60,8 +73,8 @@ The face, the arms and the actions are independent layers, so they can be combin
 │   ├── behaviors/
 │   │   └── locomotion.ts   # Idle, walk in place, walk in circle, dance and free (WASD) movement
 │   └── ui/
-│       ├── hud.ts          # Binds the toolbar buttons to actions and shows the active state
-│       └── hud.css         # Page and toolbar styles
+│       ├── hud.ts          # Builds the toolbar from the registries; shows the active state
+│       └── hud.css         # Page and toolbar styles (desktop toolbar, mobile trays)
 ├── tools/
 │   ├── render.ts           # Deterministic headless renders through Chrome (Playwright)
 │   └── diff.ts             # Pixel diff between two sets of renders
@@ -101,7 +114,7 @@ The face, the arms and the actions are independent layers, so they can be combin
   - Skin, nose and ears are one field, with per-vertex colors for the nose, the blush and the inner ears.
   - Hair, beard and mustache are separate fields.
   - The eyebrows are tubes that pivot at their inner end.
-  - The mouth is a set of thin layers (interior, teeth, tongue) with morph targets: `0` smile, `1` open (talk), `2` sad, `3` "O" (doubt).
+  - The mouth is a set of thin layers (interior, teeth, tongue) with morph targets: `0` smile, `1` open (talk), `2` sad, `3` "O" (surprise).
 - **Body:**
   - **Shirt:** the torso is a `SkinnedMesh` bound to `spine`.
   - **Sleeves:** rigid pieces bound to the shoulders. Each sleeve cap is a sphere centered on the shoulder pivot, so rotating the arm never stretches the shirt.
@@ -113,26 +126,56 @@ The face, the arms and the actions are independent layers, so they can be combin
   - The fingers are weighted to their own two joints.
   - The thumb is a separate rigid mesh on the `thumb` bone, so it can rotate without deforming the hand.
 
-### `animations.ts`: motion
+### `animation/`: motion
 
-- **Clips:** generated by `sampleClip` as offsets over the `REST` pose, with harmonics that loop seamlessly.
-  - `createIdleClip()`: breathing and a subtle sway.
-  - `createWalkClip()`: a stride with knee flexion, foot roll and an arm swing.
-  - `createDanceClip()`: a 4-beat groove with knee dips, a hip sway and alternating arms. The free foot lifts slightly on each weight shift.
-- **`CharacterStateMachine`:** crossfades between the `idle`, `walk` and `dance` states through an `AnimationMixer`. Transitions depend on `{ moving, speed, dancing }`, passed to `update(dt, ctx)` on every frame.
-- **Procedural layers** on top of the mixer:
-  - **Blinking:** an eye-scale layer that runs on its own.
-  - **Facial expressions** (`setExpression`): `neutral`, `smile`, `talk` (random syllables), `sad`, `doubt`. Each one drives the mouth morphs, the eyebrows, the eye squint and the head and torso posture.
-  - **Talk gestures:** while the character talks, each arm moves toward a new random pose on every beat.
-  - **Idle life:** a slow sway and occasional glances, only in the neutral idle.
-  - **Arm gestures** (`playArmAction(name)` / `stopArmAction(immediate)`): defined in `ARM_ACTIONS`.
-    - The gestures are `thumbsUp`, `wave`, `armUp` and `shrug`.
-    - Each one blends in, overrides the arm pose while it plays and blends out.
-    - Their poses are written as directions in torso space (`armQuats`): upper arm, forearm and palm.
+An `Animator` drives one character by stacking layers. Every frame, each layer writes on top of the pose left by the previous one:
+
+| Order | Layer | What it does |
+| --- | --- | --- |
+| 1 | **body** | A small state machine (`idle`, `walk`, `dance`) that crossfades looping clips through an `AnimationMixer`. Transitions depend on `{ moving, speed, dancing }`. |
+| 2 | **blink** | Periodic blinks over the eye scales, combined with the face squint. |
+| 3 | **face** | Turns the current expression into mouth morphs, brow motion, squint and posture. Talking expressions open and close the mouth in random syllables. |
+| 4 | **talk-gestures** | While talking, each arm moves toward a new random pose on every beat. |
+| 5 | **idle-life** | In a calm idle: a slow sway and occasional glances. |
+| 6 | **gesture** | One arm gesture at a time, blended in and out, overriding the arms. |
+
+`Animator` API: `setExpression(name)`, `playGesture(name)`, `stopGesture(immediate?)`, `activeGesture`, `bodyState`, `setBodyState(name, fade?)`, `update(dt, motion)`.
+
+- **Clips** are sampled by `sampleClip` as offsets over the `REST` pose, with harmonics that loop seamlessly.
+- **Gestures** return an `ArmPose` for time `t`: absolute rotations (`q`, `r`), finger and thumb curls, additive rotations (`add`) and a shoulder `lift`. Arm poses are usually written as directions in torso space with `armQuats(side, upperArm, forearm, palm)`.
+- **Expressions** are data: target weights for the face channels (`smile`, `sad`, `surprise`) plus flags (`talk`, `idleLife`).
+
+### Adding expressions and gestures
+
+Definitions live in registries. Defining one with `ui` metadata also adds its HUD button and, with `ui.key` (a `KeyboardEvent.code`), its shortcut. A definition with an existing name replaces it.
+
+```ts
+import { defineExpression } from './animation/expressions';
+import { defineGesture } from './animation/gestures';
+import { armQuats, dir } from './animation/pose';
+
+defineExpression({
+  name: 'amused',
+  channels: { smile: 0.6, surprise: 0.3 },
+  ui: { label: 'Amused', icon: 'smiley-wink', key: 'KeyI' },
+});
+
+defineGesture({
+  name: 'point',
+  duration: 2,
+  pose: () => {
+    const q = armQuats(-1, dir(-0.2, -0.3, 1), dir(0, 0.1, 1), [1, 0, 0]);
+    return { q: { shoulderR: q.s, elbowR: q.e }, fingers: { fingersR: 1.2, fingerTipsR: 1.4 } };
+  },
+  ui: { label: 'Point', icon: 'hand-pointing', key: 'Digit5' },
+});
+```
+
+Icons are [Phosphor](https://phosphoricons.com/) names. Built-in content is in `src/library/`.
 
 ### Frame loop
 
-`Stage` runs every registered update callback in order and then renders. The demo registers a single callback that moves the character (`Locomotion`), feeds the result to the state machine, syncs the HUD and eases the camera. The key light and its shadow follow `stage.focus`.
+`Stage` runs every registered update callback in order and then renders. The demo registers a single callback that moves the character (`Locomotion`), feeds the result to the animator, syncs the HUD and eases the camera. The key light and its shadow follow `stage.focus`.
 
 Time can run in real time (`requestAnimationFrame`) or be stepped manually with a fixed time step (`stage.advance(seconds)`). Together with the seedable random source, manual time makes a render depend only on its inputs.
 
@@ -150,7 +193,7 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | `stage` | The stage (frame loop, lights) |
 | `scene`, `camera`, `controls`, `renderer` | The Three.js scene objects |
 | `character` | The character model |
-| `fsm` | The state machine |
+| `animator` | The character's animator (layers, expressions, gestures) |
 | `locomotion` | The movement controller |
 | `setMode`, `setFace`, `reset` | HUD actions |
 | `capture(azimuthDeg, { dist, height, target })` | Renders a fixed view and returns it as a PNG data URL |
