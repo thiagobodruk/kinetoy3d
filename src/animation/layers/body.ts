@@ -1,6 +1,8 @@
 // Body layer: a small state machine that crossfades looping clips through an AnimationMixer.
 import * as THREE from 'three';
+import type { BoneName } from '../../rig/rig';
 import { clips } from '../clips';
+import { REST } from '../pose';
 import type { Layer, LayerState } from '../layer';
 
 /**
@@ -17,6 +19,12 @@ export class BodyLayer implements Layer {
   readonly mixer: THREE.AnimationMixer;
   private readonly actions = new Map<BodyStateName, THREE.AnimationAction>();
   current: BodyStateName | null = null;
+  // The mixer only writes a bone when the clip value changes, so on a held pose (e.g. the bow's
+  // pause) the bone would keep last frame's value — including the additive layers on top of it
+  // (face, look…), which then pile up. The clip pose is saved after each mixer update and
+  // restored before the next one.
+  private saved = false;
+  private pose: { bone: THREE.Object3D; q: THREE.Quaternion; p: THREE.Vector3 }[] | null = null;
   ctx: MotionContext = { moving: false, speed: 0, loop: null };
   private listeners: StateListener[] = [];
 
@@ -50,7 +58,12 @@ export class BodyLayer implements Layer {
     this.set(ctx.moving ? 'walk' : ctx.loop ?? 'idle');
     // walk playback speed follows movement speed
     if (this.current === 'walk') this.action('walk').timeScale = THREE.MathUtils.clamp(ctx.speed / WALK_SPEED, 0.5, 2);
+    this.pose ??= (Object.keys(REST) as BoneName[]).map((name) => ({ bone: s.bones[name], q: new THREE.Quaternion(), p: new THREE.Vector3() }))
+      .filter((b) => b.bone);
+    if (this.saved) for (const b of this.pose) { b.bone.quaternion.copy(b.q); b.bone.position.copy(b.p); }
     this.mixer.update(dt);
+    for (const b of this.pose) { b.q.copy(b.bone.quaternion); b.p.copy(b.bone.position); }
+    this.saved = true;
     s.body = this.current;
   }
 }
