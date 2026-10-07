@@ -1,0 +1,447 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/Scene",
+  "definitions": {
+    "Scene": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique id, used in URLs (?scene=id) and tools."
+        },
+        "title": {
+          "type": "string",
+          "description": "Name shown in the HUD."
+        },
+        "cast": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CastEntry"
+          },
+          "description": "Actors on stage when the scene starts."
+        },
+        "tracks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Step"
+            }
+          },
+          "description": "One track per actor (key = actor id): steps that run one after the other."
+        },
+        "camera": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CameraCue"
+          },
+          "description": "Camera cues, each starting at a time or when a marker is reached. Default: a wide shot of everyone."
+        },
+        "loop": {
+          "type": "boolean",
+          "description": "Start over when the scene ends."
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "cast",
+        "tracks"
+      ],
+      "additionalProperties": false,
+      "description": "A scene: who is on stage, what each actor does (one track each) and where the camera looks."
+    },
+    "CastEntry": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "description": "Id used by the tracks, camera cues and targets (e.g. \"squid\")."
+        },
+        "preset": {
+          "type": "string",
+          "description": "Character preset id (content/characters/)."
+        },
+        "at": {
+          "$ref": "#/definitions/Point",
+          "description": "Starting position on the ground: [x, z]. +x is the stage's left side seen from the front camera; +z comes toward the camera."
+        },
+        "facing": {
+          "type": [
+            "number",
+            "string"
+          ],
+          "description": "Starting heading: degrees (0 = toward the camera, 90 = toward +x) or another actor's id to face."
+        }
+      },
+      "required": [
+        "actor",
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "Point": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "A point on the ground: [x, z]."
+    },
+    "Step": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/WalkToStep"
+        },
+        {
+          "$ref": "#/definitions/TurnToStep"
+        },
+        {
+          "$ref": "#/definitions/LookAtStep"
+        },
+        {
+          "$ref": "#/definitions/GestureStep"
+        },
+        {
+          "$ref": "#/definitions/FaceStep"
+        },
+        {
+          "$ref": "#/definitions/ActStep"
+        },
+        {
+          "$ref": "#/definitions/WaitStep"
+        },
+        {
+          "$ref": "#/definitions/MarkStep"
+        }
+      ]
+    },
+    "WalkToStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "walkTo"
+        },
+        "to": {
+          "$ref": "#/definitions/Target"
+        }
+      },
+      "required": [
+        "do",
+        "to"
+      ],
+      "additionalProperties": false,
+      "description": "Walks to a point; walking to an actor stops a little in front of them."
+    },
+    "Target": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/Point"
+        }
+      ],
+      "description": "Another actor's id, or a point on the ground."
+    },
+    "TurnToStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "turnTo"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Target"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "required": [
+        "do",
+        "to"
+      ],
+      "additionalProperties": false,
+      "description": "Turns in place toward a point or an actor, or to a heading in degrees."
+    },
+    "LookAtStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "lookAt"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Target"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "do",
+        "at"
+      ],
+      "additionalProperties": false,
+      "description": "Turns the head toward a point or an actor and keeps looking; null looks ahead again."
+    },
+    "GestureStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "gesture"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "do",
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "Plays an arm gesture (thumbsUp, wave, armUp, shrug…) and waits for it to end."
+    },
+    "FaceStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "face"
+        },
+        "name": {
+          "type": "string"
+        },
+        "for": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "do",
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "Sets a facial expression (neutral, smile, talk, sad, surprise…); with `for`, holds it that many seconds and returns to neutral."
+    },
+    "ActStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "act"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "walkInPlace",
+            "dance",
+            "circle"
+          ]
+        },
+        "for": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "do",
+        "mode"
+      ],
+      "additionalProperties": false,
+      "description": "Switches the body mode; with `for`, keeps it that many seconds and returns to idle."
+    },
+    "WaitStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "wait"
+        },
+        "for": {
+          "type": "number"
+        },
+        "until": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "do"
+      ],
+      "additionalProperties": false,
+      "description": "Waits a number of seconds, or until a marker is reached (with both: whichever comes first)."
+    },
+    "MarkStep": {
+      "type": "object",
+      "properties": {
+        "async": {
+          "type": "boolean",
+          "description": "Start the step and go on to the next one right away (it keeps running alongside)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Marker reached when this step finishes (for `wait.until` and camera `after`)."
+        },
+        "do": {
+          "type": "string",
+          "const": "mark"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "do",
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "Reaches a marker right away. Every track also reaches \"<actor>:end\" when it finishes."
+    },
+    "CameraCue": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "number",
+          "description": "Start time in seconds (use this or `after`)."
+        },
+        "after": {
+          "type": "string",
+          "description": "Start when this marker is reached."
+        },
+        "shot": {
+          "$ref": "#/definitions/ShotSize"
+        },
+        "on": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Who to frame: one actor id or several. Default: everyone."
+        },
+        "from": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "front"
+            },
+            {
+              "type": "string",
+              "const": "side"
+            },
+            {
+              "type": "string",
+              "const": "3q"
+            },
+            {
+              "type": "string",
+              "const": "back"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "description": "Camera direction: front, side, 3q, back or degrees. With one actor it's relative to where they face; otherwise to the stage."
+        },
+        "ease": {
+          "type": "number",
+          "description": "Seconds to glide from the previous shot (0 = cut). Default 1.2."
+        },
+        "follow": {
+          "type": "boolean",
+          "description": "Keep framing the actors as they move."
+        }
+      },
+      "required": [
+        "shot"
+      ],
+      "additionalProperties": false
+    },
+    "ShotSize": {
+      "type": "string",
+      "enum": [
+        "wide",
+        "medium",
+        "close",
+        "overShoulder"
+      ],
+      "description": "How much the shot shows. overShoulder needs two actors in `on`: [from, toward]."
+    }
+  }
+}

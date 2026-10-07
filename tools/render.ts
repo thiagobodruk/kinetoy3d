@@ -4,6 +4,7 @@
 //   npm run render -- [--url http://localhost:5178] [--views front,side,back,3q]
 //                     [--face smile] [--mode dance] [--gesture wave] [--wait 1.5]
 //                     [--actors 3 | --cast squid,kelp]
+//   npm run render -- --scene meeting --at 2,5.5,9   (frames of a scene, through its camera)
 //                     [--name prefix] [--out renders] [--size 900x1200] [--seed 1]
 //
 // Without --url it starts its own Vite dev server on a free port. The page runs in manual
@@ -32,6 +33,8 @@ const { values: args } = parseArgs({
     seed: { type: 'string', default: '1' },
     actors: { type: 'string', default: '1' },
     cast: { type: 'string' },
+    scene: { type: 'string' },
+    at: { type: 'string', default: '0' },
   },
 });
 
@@ -59,29 +62,40 @@ try {
   target.searchParams.set('manual', '');
   target.searchParams.set('seed', args.seed);
   if (args.cast) target.searchParams.set('cast', args.cast);
+  if (args.scene) target.searchParams.set('scene', args.scene);
   await page.goto(target.href);
   await Promise.race([page.waitForFunction(() => window.__app, null, { timeout: 180_000 }), failed]);
 
-  await page.evaluate(async ({ face, mode, gesture, wait, actors, cast }) => {
-    const app = window.__app;
-    // extra actors (face/mode/gesture apply to the active one, the first)
-    if (!cast) await Promise.all(Array.from({ length: actors - 1 }, () => app.addActor()));
-    if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
-    if (face) app.setFace(face);
-    if (gesture) void app.active.gesture(gesture);
-    app.advance(wait);
-  }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait), actors: Number(args.actors), cast: args.cast });
-
   await mkdir(args.out, { recursive: true });
-  for (const view of args.views.split(',')) {
-    const azimuth = VIEWS[view] ?? Number(view);
-    if (!Number.isFinite(azimuth)) throw new Error(`Unknown view "${view}"`);
-    const dataUrl = await page.evaluate(
-      ({ azimuth, dist }) => window.__app.capture(azimuth, { dist }),
-      { azimuth, dist: Number(args.dist) });
-    const file = join(args.out, `${args.name}_${view}.png`);
-    await writeFile(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
-    console.log(file);
+  if (args.scene) {
+    // scene frames: seek to each time and render through the scene's camera
+    for (const t of args.at.split(',').map(Number)) {
+      const dataUrl = await page.evaluate((t) => { window.__app.seek(t); return window.__app.captureView(); }, t);
+      const file = join(args.out, `${args.name}_t${t}.png`);
+      await writeFile(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
+      console.log(file);
+    }
+  } else {
+    await page.evaluate(async ({ face, mode, gesture, wait, actors, cast }) => {
+      const app = window.__app;
+      // extra actors (face/mode/gesture apply to the active one, the first)
+      if (!cast) await Promise.all(Array.from({ length: actors - 1 }, () => app.addActor()));
+      if (mode) app.setMode(mode as Parameters<typeof app.setMode>[0]);
+      if (face) app.setFace(face);
+      if (gesture) void app.active.gesture(gesture);
+      app.advance(wait);
+    }, { face: args.face, mode: args.mode, gesture: args.gesture, wait: Number(args.wait), actors: Number(args.actors), cast: args.cast });
+
+    for (const view of args.views.split(',')) {
+      const azimuth = VIEWS[view] ?? Number(view);
+      if (!Number.isFinite(azimuth)) throw new Error(`Unknown view "${view}"`);
+      const dataUrl = await page.evaluate(
+        ({ azimuth, dist }) => window.__app.capture(azimuth, { dist }),
+        { azimuth, dist: Number(args.dist) });
+      const file = join(args.out, `${args.name}_${view}.png`);
+      await writeFile(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
+      console.log(file);
+    }
   }
 } finally {
   await browser.close();

@@ -1,11 +1,12 @@
 // Moves an actor around the stage and reports what it's doing to the body layer.
 //   idle · walkInPlace · circle (a fixed circle from home) · dance
 //   free (steered every frame, e.g. by the keyboard) · walkTo (walks to a point, then idles)
+//   turnTo (turns in place to a heading, then idles)
 import * as THREE from 'three';
 import type { MotionContext } from '../animation/animator';
 import type { UiMeta } from '../animation/registry';
 
-export type Mode = 'idle' | 'walkInPlace' | 'circle' | 'dance' | 'free' | 'walkTo';
+export type Mode = 'idle' | 'walkInPlace' | 'circle' | 'dance' | 'free' | 'walkTo' | 'turnTo';
 
 /** Modes offered in the HUD. */
 export const MODES: { name: Mode; ui: UiMeta }[] = [
@@ -18,6 +19,8 @@ export const MODES: { name: Mode; ui: UiMeta }[] = [
 export const WALK_SPEED = 1.1;
 const CIRCLE_RADIUS = 1.6;
 const ARRIVE_DISTANCE = 0.01;
+const TURN_RATE = 4;      // rad/s when turning in place
+const TURN_DONE = 0.005;  // rad
 
 export class Motion {
   mode: Mode = 'idle';
@@ -26,6 +29,7 @@ export class Motion {
   private circleAngle = 0;
   private steerDir: THREE.Vector3 | null = null;
   private target: THREE.Vector3 | null = null;
+  private targetYaw = 0;
   private arrived: (() => void) | null = null;
   private listeners: ((mode: Mode) => void)[] = [];
   private tmp = new THREE.Vector3();
@@ -33,7 +37,7 @@ export class Motion {
   constructor(private body: THREE.Object3D, readonly home: THREE.Vector3) {}
 
   setMode(mode: Mode): void {
-    if (this.mode === 'walkTo' && mode !== 'walkTo') this.finishWalk();
+    if ((this.mode === 'walkTo' || this.mode === 'turnTo') && mode !== this.mode) this.finishWalk();
     this.mode = mode;
     this.listeners.forEach((fn) => fn(mode));
   }
@@ -52,6 +56,22 @@ export class Motion {
     const done = new Promise<void>((resolve) => { this.arrived = resolve; });
     this.setMode('walkTo');
     return done;
+  }
+
+  /** Turns in place to a heading (radians; 0 = facing +Z). Resolves when facing it. */
+  turnTo(yaw: number): Promise<void> {
+    this.setMode('idle');
+    this.targetYaw = yaw;
+    const done = new Promise<void>((resolve) => { this.arrived = resolve; });
+    this.setMode('turnTo');
+    return done;
+  }
+
+  /** Puts the actor at (x, z) facing `yaw`, idle; also makes that its home. */
+  place(x: number, z: number, yaw = 0): void {
+    this.home.set(x, 0, z);
+    this.reset();
+    this.body.rotation.y = yaw;
   }
 
   private finishWalk(): void {
@@ -93,6 +113,11 @@ export class Motion {
       this.step.copy(dir).multiplyScalar(WALK_SPEED * dt);
       body.position.addScaledVector(dir, WALK_SPEED * dt);
       this.turnToward(dir, dt);
+    } else if (this.mode === 'turnTo') {
+      let d = this.targetYaw - body.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      if (Math.abs(d) <= TURN_DONE) { body.rotation.y = this.targetYaw; this.setMode('idle'); }
+      else body.rotation.y += Math.sign(d) * Math.min(Math.abs(d), TURN_RATE * dt);
     } else if (this.mode === 'walkTo' && this.target) {
       const to = this.tmp.subVectors(this.target, body.position).setY(0);
       const dist = to.length();

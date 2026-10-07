@@ -1,9 +1,18 @@
 {
+  "$schema": "./character.schema.json",
   "id": "sunny",
   "name": "Sunny",
   "type": "squid",
   "options": {
-    "palette": { "shirt": "#f2b630", "pants": "#1d275a", "skin": "#8d5a3b", "hair": "#d9d4cc" },
-    "parts": { "hair": "bald", "decal": "none" }
+    "palette": {
+      "shirt": "#f2b630",
+      "pants": "#1d275a",
+      "skin": "#8d5a3b",
+      "hair": "#d9d4cc"
+    },
+    "parts": {
+      "hair": "bald",
+      "decal": "none"
+    }
   }
 }

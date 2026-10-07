@@ -1,4 +1,5 @@
 {
+  "$schema": "./character.schema.json",
   "id": "squid",
   "name": "Squid",
   "type": "squid",

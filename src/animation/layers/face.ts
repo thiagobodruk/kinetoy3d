@@ -19,7 +19,8 @@ export class FaceLayer implements Layer {
   private browTimer = 0;     // time left for the current arch
 
   constructor(rig: Rig) {
-    this.browRest = rig.face.brows.map((b) => b.position.clone());
+    // rest positions are recorded once per model (a new layer may start from a displaced pose)
+    this.browRest = rig.face.brows.map((b) => (b.userData.rest ??= b.position.clone()) as THREE.Vector3);
   }
 
   update(dt: number, s: LayerState): void {

@@ -23,30 +23,36 @@ Then open <http://localhost:5178>.
 | `npm run build` | Type-checks and builds the static site into `dist/` |
 | `npm run preview` | Serves the built `dist/` locally |
 | `npm run typecheck` | Runs the TypeScript compiler without emitting |
+| `npm run check` | Validates the content files: schemas plus links between files (part of `build`) |
+| `npm run schema` | Regenerates the JSON Schemas of the content files from the TypeScript types |
 | `npm run bake` | Pre-builds the character presets into `public/models/` (part of `build`) |
 | `npm run render` | Headless renders of the character (see [Tools](#tools)) |
 | `npm run diff` | Visual regression between two sets of renders |
 
 ## Controls
 
-The HUD is a single toolbar at the bottom center of the screen. Hover over a button to see its name and shortcut. The `‹` button collapses the toolbar into a small `›` button in the bottom-left corner.
+The HUD is a compact bar at the bottom center of the screen, with one button per group showing its active option. Clicking (or tapping) a group opens its options in a tray above the bar; picking an option or clicking outside closes it. Hover over a button to see its name and shortcut. The `‹` button collapses the bar into a small `›` button in the bottom-left corner. On phones the buttons are larger.
 
-On narrow screens (phones), the toolbar shows one large button per group, with the icon of the active option, plus a Reset button. Tapping a group opens its options in a tray above the bar; picking an option or tapping outside closes it.
+Order: **Actions · Face · Arms** | **Camera · Actors · Scenes** | **Reset**.
 
 The buttons are generated from the registered modes, expressions and gestures (see [Adding expressions and gestures](#adding-expressions-and-gestures)).
 
 | Group | Buttons | Shortcuts |
 | --- | --- | --- |
+| **Scenes** | A menu with the scenes in `content/scenes/` | `Space` plays/pauses the open scene |
 | **Actors** | One button per actor (tinted with its shirt color) · Add actor | Click a character on the stage to make it active |
 | **Actions** | Idle · Walk (in place) · Walk in circle · Dance | `G` toggles dance; `WASD` / arrow keys walk freely, relative to the camera |
 | **Face** | Neutral · Smile · Talk · Sad · Surprise | `Y` smile, `T` talk, `U` sad (each one toggles) |
 | **Arms** | Rest · Thumbs up · Wave · Raise arm · Shrug | `1` to `4` play the gestures |
-| **Camera** | View menu (Front / Side / Back / 3/4) · Zoom out · Zoom in · Reset | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
+| **Camera** | Views (Front / Side / Back / 3/4) · Zoom out · Zoom in | `+` / `−` zoom; drag to orbit; mouse wheel zooms |
+| **Reset** | Restarts the open scene, or resets the stage | |
 | **Panel** | Collapse / expand | `H` |
 
 The HUD, the shortcuts and the camera views act on the **active actor**; a ring on the ground marks it when there's more than one. Adding an actor brings in the next character preset; the scene keeps running while it loads.
 
-**Reset** returns every actor to its home position, idle, with a neutral face and no gesture, and the camera to the front view.
+**Scenes** open in a player above the toolbar: play/pause, restart, a timeline to scrub, and close. While a scene plays, its camera cues drive the camera until you drag to orbit; the keyboard doesn't steer the actors. Closing it leaves the actors on stage for free play.
+
+**Reset** restarts the open scene, or, without one, returns every actor to its home position, idle, with a neutral face and no gesture, and the camera to the front view.
 
 The face, the arms and the actions are independent layers, so they can be combined. For example, the character can dance and talk with a thumbs up at the same time.
 
@@ -56,7 +62,8 @@ The face, the arms and the actions are independent layers, so they can be combin
 .
 ├── index.html              # Page shell (the HUD is generated)
 ├── content/
-│   └── characters/         # Character presets (JSON): type, palette, parts
+│   ├── characters/         # Character presets (JSON) + character.schema.json
+│   └── scenes/             # Scene scripts (JSON) + scene.schema.json
 ├── src/
 │   ├── main.ts             # Demo app: wires the stage, cast, HUD and keyboard
 │   ├── sdf.ts              # SDF primitives/operators and Surface Nets polygonization
@@ -66,6 +73,11 @@ The face, the arms and the actions are independent layers, so they can be combin
 │   │   ├── registry.ts     # Character types (defineCharacter), assembly, colors
 │   │   ├── presets.ts      # Loads content/characters/*.json
 │   │   └── squid.ts        # Squid: skeleton, SDF fields, parts, palette, materials, rig
+│   ├── director/
+│   │   ├── scene.ts        # Scene script types (source of scene.schema.json)
+│   │   ├── director.ts     # Runs a scene: tracks, markers, camera cues, seeking
+│   │   ├── shots.ts        # Camera shots: wide, medium, close, over-the-shoulder
+│   │   └── scenes.ts       # Loads content/scenes/*.json
 │   ├── model/
 │   │   ├── serialize.ts    # Model ⇄ binary (exact for workers, compact for baked files)
 │   │   ├── worker.ts       # Builds a character's geometry off the main thread
@@ -93,9 +105,12 @@ The face, the arms and the actions are independent layers, so they can be combin
 │   │   └── keyboard-control.ts  # WASD / arrows steer the active actor; the camera follows
 │   └── ui/
 │       ├── hud.ts          # Builds the toolbar from the registries; shows the active state
+│       ├── scene-bar.ts    # Scene player: play/pause, restart, timeline, close
 │       └── hud.css         # Page and toolbar styles (desktop toolbar, mobile trays)
 ├── tools/
 │   ├── bake.ts             # Pre-builds the presets into public/models/
+│   ├── check.ts            # Validates content/ (schemas + links)
+│   ├── schema.ts           # Generates the content JSON Schemas from the TS types
 │   ├── render.ts           # Deterministic headless renders through Chrome (Playwright)
 │   └── diff.ts             # Pixel diff between two sets of renders
 ├── .github/workflows/
@@ -255,6 +270,64 @@ await squid.act('dance', 3);       // dances for 3 s, then idles
 await squid.wait(0.5);
 ```
 
+### `director/`: scenes
+
+A scene (`content/scenes/*.json`) says who is on stage, what each actor does and where the camera looks. Each actor has a **track**: steps that run one after the other. Tracks sync through **markers**.
+
+```json
+{
+  "$schema": "./scene.schema.json",
+  "id": "meeting",
+  "title": "The meeting",
+  "cast": [
+    { "actor": "squid", "preset": "squid", "at": [-1.2, 0], "facing": 20 },
+    { "actor": "kelp", "preset": "kelp", "at": [3.4, -1.2], "facing": "squid" }
+  ],
+  "camera": [
+    { "t": 0, "shot": "wide", "from": "3q" },
+    { "after": "kelp:arrived", "shot": "medium", "on": ["squid", "kelp"], "ease": 1.5 }
+  ],
+  "tracks": {
+    "kelp": [
+      { "do": "walkTo", "to": "squid", "mark": "kelp:arrived" },
+      { "do": "gesture", "name": "thumbsUp" }
+    ],
+    "squid": [
+      { "do": "lookAt", "at": "kelp" },
+      { "do": "wait", "until": "kelp:arrived" },
+      { "do": "turnTo", "to": "kelp" },
+      { "do": "face", "name": "smile", "for": 2 }
+    ]
+  }
+}
+```
+
+**Steps**
+
+| Step | Fields | Finishes |
+| --- | --- | --- |
+| `walkTo` | `to`: actor id (stops in front of them) or `[x, z]` | on arrival |
+| `turnTo` | `to`: actor id, `[x, z]` or degrees | when facing it |
+| `lookAt` | `at`: actor id, `[x, z]` or `null` (look ahead) | right away (the head keeps following) |
+| `gesture` | `name`: thumbsUp, wave, armUp, shrug… | when the gesture ends |
+| `face` | `name`: neutral, smile, talk, sad, surprise…; `for` (s) | right away, or after `for` (then back to neutral) |
+| `act` | `mode`: idle, walkInPlace, dance, circle; `for` (s) | right away, or after `for` (then back to idle) |
+| `wait` | `for` (s) and/or `until` (marker) | when time is up or the marker is reached |
+| `mark` | `name` | right away (reaches the marker) |
+
+Every step also takes `mark` (a marker reached when it finishes) and `async` (start it and go on right away). Each track reaches `<actor>:end` when it finishes.
+
+**Camera cues** start at `t` (seconds) or `after` a marker. `shot`: `wide`, `medium`, `close` or `overShoulder` (with `on: [from, toward]`); `on`: who to frame (default everyone); `from`: `front`, `side`, `3q`, `back` or degrees (relative to the actor's facing for one actor); `ease`: seconds to glide (0 = cut); `follow`: keep framing as they move. Single-actor shots move around anyone standing in the way, and on narrow screens the camera backs off until the group fits.
+
+**Playback.** Steps run synchronously inside the frame loop, so a scene replays identically when time is stepped in fixed increments. Seeking starts over (fresh animation state and random sequence) and fast-forwards; moving forward continues from the current time. The scene's length is measured by a dry run when it loads.
+
+**Editing.** The `$schema` line gives the editor validation, autocomplete and hints. `npm run check` validates every file and the links between them (actors, presets, gestures, expressions, markers, camera targets), with messages that point to the field and list the valid values:
+
+```
+✗ content/scenes/1-meeting.json: tracks.kelp[1].name: no gesture "salute" (known: thumbsUp, wave, armUp, shrug)
+✗ content/scenes/1-meeting.json: tracks.squid[2].until: marker "kelp:arived" is never reached (known: kelp:arrived, …)
+```
+
 ### Frame loop
 
 `Stage` runs every registered update callback in order and then renders. The demo registers a single callback: the keyboard steers the active actor, every actor updates (motion, then its animator), the camera follows a steered actor, the HUD syncs and the camera eases. The key light follows `stage.focus` and its shadow grows to cover every actor.
@@ -266,6 +339,7 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | `?seed=N` | Repeatable random choices (blinks, glances, talk syllables and gestures) |
 | `?manual` | No real-time loop; time only moves through `__app.advance(seconds)` |
 | `?cast=id,id` | Actors to start with (preset ids); default: the first preset |
+| `?scene=id` | Opens a scene (plays it, unless `?manual`) |
 
 ### Debug hook
 
@@ -279,6 +353,8 @@ Time can run in real time (`requestAnimationFrame`) or be stepped manually with 
 | `active` | The active actor |
 | `setMode`, `setFace`, `reset`, `select(name)` | HUD actions |
 | `addActor(presetId?)` | Adds an actor (async); default: the next preset |
+| `director`, `openScene(id)`, `closeScene()`, `seek(t)` | The scene player |
+| `captureView()` | Renders the current camera as a PNG data URL |
 | `capture(azimuthDeg, { dist, height, target })` | Renders a fixed view and returns it as a PNG data URL |
 | `advance(seconds)` | Advances time in fixed 1/60 s steps and renders |
 
@@ -294,9 +370,10 @@ npm run render -- --name dance --mode dance --wait 1.2
 npm run render -- --name wave --gesture wave --wait 0.8 --views 0,45,120
 npm run render -- --name trio --actors 3 --mode dance --wait 1
 npm run render -- --name kelp --cast kelp --face smile
+npm run render -- --name meet --scene meeting --at 2,6.5,10   # frames through the scene's camera
 ```
 
-Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--actors` (how many actors; the options apply to the first), `--cast` (preset ids to put on stage), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
+Options: `--views` (`front`, `side`, `back`, `3q` or an azimuth in degrees), `--face`, `--mode`, `--gesture`, `--wait` (seconds of animation before capturing), `--actors` (how many actors; the options apply to the first), `--cast` (preset ids to put on stage), `--scene` + `--at` (times in seconds), `--seed`, `--name`, `--size` (e.g. `900x1200`), `--dist`, `--url`.
 
 **`diff`** compares two sets of renders and writes images with the changed pixels in red. It exits with an error when more than 0.5% of a view changed.
 

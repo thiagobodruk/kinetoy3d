@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/CharacterPresetFile",
+  "definitions": {
+    "CharacterPresetFile": {
+      "$ref": "#/definitions/SquidPreset",
+      "description": "A character preset file (content/characters/*.json); source of character.schema.json."
+    },
+    "SquidPreset": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique id, used by scenes (cast.preset), URLs (?cast=id) and tools."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name shown in the HUD."
+        },
+        "type": {
+          "type": "string",
+          "const": "squid"
+        },
+        "options": {
+          "$ref": "#/definitions/SquidOptions"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "additionalProperties": false,
+      "description": "A Squid: the procedural vinyl-toy character."
+    },
+    "SquidOptions": {
+      "type": "object",
+      "properties": {
+        "palette": {
+          "type": "object",
+          "properties": {
+            "skin": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "skinShade": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "nose": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "blush": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "lip": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "hair": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "shirt": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "star": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "pants": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "shoe": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "sole": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "eye": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "mouth": {
+              "$ref": "#/definitions/ColorValue"
+            },
+            "tongue": {
+              "$ref": "#/definitions/ColorValue"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Color overrides: '#rrggbb' strings or hex numbers, e.g. { shirt: '#2b6cd6' }."
+        },
+        "parts": {
+          "type": "object",
+          "properties": {
+            "hair": {
+              "type": "string",
+              "enum": [
+                "classic",
+                "bald"
+              ]
+            },
+            "facialHair": {
+              "type": "string",
+              "enum": [
+                "beard",
+                "mustache",
+                "none"
+              ]
+            },
+            "decal": {
+              "type": "string",
+              "enum": [
+                "star",
+                "none"
+              ],
+              "description": "chest print"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ColorValue": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "description": "A color in JSON or code: '#rrggbb' or a hex number."
+    }
+  }
+}

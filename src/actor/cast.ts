@@ -15,6 +15,8 @@ const slotX = (i: number) => Math.ceil(i / 2) * SLOT_SPACING * (i % 2 ? 1 : -1);
 export class Cast {
   readonly actors: Actor[] = [];
   active: Actor | null = null;
+  /** Show the ring under the active actor (off while a scene plays). */
+  showSelection = true;
   private listeners: ((event: CastEvent, actor: Actor) => void)[] = [];
   private ring: THREE.Mesh;
   private slots = 0; // home positions handed out (adds may finish out of order)
@@ -43,11 +45,30 @@ export class Cast {
     for (let n = 2; this.actors.some((a) => a.name === name); n++) name = `${ref.name ?? def.ui?.label ?? ref.type} ${n}`;
     const actor = new Actor(name, ref.type, instance, new THREE.Vector3(slotX(slot), 0, 0));
     actor.preset = ref.id;
+    actor.order = slot;
+    actor.color = def.accent?.(ref.options ?? {}) ?? actor.color;
     this.actors.push(actor);
+    this.actors.sort((a, b) => a.order - b.order);
     this.scene.add(actor.object);
     this.emit('add', actor);
     if (!this.active) this.select(actor);
     return actor;
+  }
+
+  /** Removes every actor. */
+  clear(): void {
+    for (const a of this.actors) {
+      this.scene.remove(a.object);
+      // free GPU memory (materials are per actor)
+      a.object.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.geometry.dispose();
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
+      });
+    }
+    this.actors.length = 0;
+    this.active = null;
+    this.slots = 0;
   }
 
   get(name: string): Actor {
@@ -82,7 +103,7 @@ export class Cast {
 
   update(dt: number): void {
     for (const actor of this.actors) actor.update(dt);
-    this.ring.visible = this.actors.length > 1 && !!this.active;
+    this.ring.visible = this.showSelection && this.actors.length > 1 && !!this.active;
     if (this.active) this.ring.position.set(this.active.position.x, this.ring.position.y, this.active.position.z);
   }
 }

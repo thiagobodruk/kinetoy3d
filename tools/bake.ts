@@ -19,7 +19,7 @@ await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 
 const manifest: Record<string, { file: string; key: string }> = {};
-for (const file of (await readdir(SRC)).filter((f) => f.endsWith('.json')).sort()) {
+for (const file of (await readdir(SRC)).filter((f) => f.endsWith('.json') && !f.endsWith('.schema.json')).sort()) {
   const preset: CharacterPreset = JSON.parse(await readFile(join(SRC, file), 'utf8'));
   const t = performance.now();
   const ref = { type: preset.type, options: preset.options ?? {}, id: preset.id };

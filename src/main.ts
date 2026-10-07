@@ -5,6 +5,7 @@
 //   ?seed=N   repeatable random choices (blinks, glances, talk)
 //   ?manual   no real-time loop; time only moves through __app.advance(seconds)
 //   ?cast=a,b actors to start with (preset ids from content/characters/)
+//   ?scene=id open a scene (content/scenes/); it plays unless ?manual
 import '@phosphor-icons/web/regular/style.css';
 import './library';
 import './characters';
@@ -14,13 +15,15 @@ import { MODES, type Mode } from './actor/motion';
 import { expressions } from './animation/expressions';
 import { gestures } from './animation/gestures';
 import { KeyboardControl } from './behaviors/keyboard-control';
-import { characters } from './characters/registry';
 import { presets, getPreset } from './characters/presets';
 import { CameraRig, type ViewName } from './core/camera';
 import { Keyboard } from './core/keyboard';
 import { setSeed } from './core/random';
 import { Stage } from './core/stage';
+import { Director } from './director/director';
+import { getScene, scenes } from './director/scenes';
 import { Hud, REST_ARMS, ZOOM_STEP } from './ui/hud';
+import { SceneBar } from './ui/scene-bar';
 
 const params = new URLSearchParams(location.search);
 if (params.has('seed')) setSeed(Number(params.get('seed')));
@@ -33,15 +36,30 @@ const keyboardControl = new KeyboardControl(new Keyboard(), cameraRig);
 const cast = new Cast(stage.scene);
 const active = () => cast.active!;
 
-const colors = new Map<string, string>();
 /** Adds an actor from a preset (default: the next one in content/characters/). */
 async function addActor(id?: string): Promise<Actor> {
   const preset = id ? getPreset(id) : presets[cast.actors.length % presets.length];
-  const actor = await cast.add({ ...preset, options: preset.options ?? {} });
-  colors.set(actor.name, characters.get(actor.type).accent?.(preset.options ?? {}) ?? '#6b7180');
-  actor.motion.onModeChange((mode) => { if (actor === cast.active) hud.showMode(mode); });
-  syncHud();
-  return actor;
+  return cast.add({ ...preset, options: preset.options ?? {} });
+}
+
+// ---------- scenes ----------
+// While a scene is loaded the director drives the actors (frozen when paused); the keyboard
+// steering is off. The world step is shared with seeking, which replays it in fixed steps.
+const director: Director = new Director(cast, cameraRig, (dt) => { director.update(dt); cast.update(dt); });
+const sceneBar = new SceneBar(director, () => closeScene());
+document.body.append(sceneBar.el);
+async function openScene(id: string, autoplay = true) {
+  hud.showScene(id);
+  cast.showSelection = false; // no selection ring in the shot
+  loading.classList.add('toast');
+  document.body.append(loading);
+  try { await director.load(getScene(id)); } finally { loading.remove(); }
+  if (autoplay) director.play();
+}
+function closeScene() {
+  director.unload();
+  cast.showSelection = true;
+  hud.showScene(null);
 }
 /** Adds an actor from the HUD and makes it active; the scene keeps running meanwhile. */
 let adding = 0;
@@ -66,8 +84,9 @@ function setView(view: ViewName) {
   cameraRig.setView(view, active().position);
   hud.showView(view);
 }
-/** Every actor home, idle, neutral face, no gesture; front view. */
+/** Every actor home, idle, neutral face, no gesture; front view. In a scene: start over. */
 function reset() {
+  if (director.scene) { director.seek(0); director.play(); return; }
   cast.actors.forEach((a) => a.reset());
   hud.showFace('neutral');
   setView('front');
@@ -79,20 +98,26 @@ function select(name: string) { cast.select(cast.get(name)); }
 const hudEl = document.getElementById('hud')!;
 hudEl.style.visibility = 'hidden';
 const hud = new Hud(hudEl,
-  { modes: MODES, faces: expressions.list(), gestures: gestures.list() },
+  { scenes: scenes.map((s) => ({ name: s.id, text: s.title })), modes: MODES, faces: expressions.list(), gestures: gestures.list() },
   {
-    selectActor: select, addActor: () => void addActorFromHud(),
+    scene: (id) => void openScene(id), selectActor: select, addActor: () => void addActorFromHud(),
     mode: (m) => setMode(m as Mode), face: setFace, arm: playArm, view: setView, zoom: (f) => cameraRig.zoom(f), reset,
   });
 function syncHud() {
   if (!cast.active) return;
-  hud.setActors(cast.actors.map((a) => ({ name: a.name, color: colors.get(a.name)! })));
+  hud.setActors(cast.actors.map((a) => ({ name: a.name, color: a.color })));
   hud.showActor(active().name);
   hud.showMode(active().mode);
   hud.showFace(active().expression);
 }
 cast.onChange(syncHud);
-cameraRig.onUserOrbit(() => hud.showView(null)); // dragging leaves the preset views
+cast.onChange((event, actor) => {
+  if (event === 'add') actor.motion.onModeChange((mode) => { if (actor === cast.active) hud.showMode(mode); });
+});
+cameraRig.onUserOrbit(() => {
+  hud.showView(null);           // dragging leaves the preset views
+  director.cameraFree = true;   // …and the scene's camera cues
+});
 hud.showView('front');
 
 // click (not drag) on a character selects it
@@ -123,19 +148,27 @@ addEventListener('keydown', (e) => {
 
 // ---------- frame loop ----------
 stage.onUpdate((dt) => {
-  keyboardControl.steer(cast.active);
-  cast.update(dt);
-  keyboardControl.follow(cast.active);
+  if (director.scene) {
+    if (director.playing) { director.update(dt); cast.update(dt); }
+  } else {
+    keyboardControl.steer(cast.active);
+    cast.update(dt);
+    keyboardControl.follow(cast.active);
+  }
+  sceneBar.update();
   hud.showArm(cast.active?.gestureName ?? REST_ARMS);
   cameraRig.update(dt);
   stage.focusRadius = cast.bounds(stage.focus).radius; // the shadow covers every actor
 });
 stage.start();
 
-// first actors (?cast=id,id… or the first preset): the loading screen stays up until they're on stage
-const initial = params.get('cast')?.split(',') ?? [presets[0].id];
-const [first] = await Promise.all(initial.map((id) => addActor(id)));
-cast.select(first);
+// first actors (?scene=id, ?cast=id,id… or the first preset): the loading screen stays up until they're on stage
+if (params.has('scene')) await openScene(params.get('scene')!, !params.has('manual'));
+else {
+  const initial = params.get('cast')?.split(',') ?? [presets[0].id];
+  const [first] = await Promise.all(initial.map((id) => addActor(id)));
+  cast.select(first);
+}
 hudEl.style.visibility = '';
 hud.showView('front');
 loading.remove();
@@ -146,12 +179,20 @@ function capture(azimuthDeg: number, opts: { dist?: number; height?: number; tar
   stage.render();
   return stage.renderer.domElement.toDataURL('image/png');
 }
+/** Renders the current camera (e.g. the scene's) as a PNG data URL. */
+function captureView() {
+  cameraRig.controls.update();
+  stage.render();
+  return stage.renderer.domElement.toDataURL('image/png');
+}
 
 const app = {
   stage, scene: stage.scene, camera: stage.camera, renderer: stage.renderer, controls: cameraRig.controls, cast,
   /** The active actor. */
   get active() { return active(); },
-  setMode, setFace, reset, capture, select,
+  setMode, setFace, reset, capture, captureView, select, director, openScene, closeScene,
+  /** Jumps the open scene to a time (seconds). */
+  seek: (t: number) => director.seek(t),
   /** Adds an actor from a preset id (default: the next preset); resolves when it's on stage. */
   addActor,
   /** Advances time in fixed steps (for ?manual). */

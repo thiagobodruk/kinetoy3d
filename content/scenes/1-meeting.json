@@ -1,0 +1,44 @@
+{
+  "$schema": "./scene.schema.json",
+  "id": "meeting",
+  "title": "The meeting",
+  "cast": [
+    { "actor": "squid", "preset": "squid", "at": [-1.2, 0], "facing": 20 },
+    { "actor": "kelp", "preset": "kelp", "at": [3.4, -1.2], "facing": "squid" }
+  ],
+  "camera": [
+    { "t": 0, "shot": "wide", "from": "3q" },
+    { "after": "kelp:arrived", "shot": "medium", "on": ["squid", "kelp"], "ease": 1.5 },
+    { "after": "squid:waved", "shot": "overShoulder", "on": ["squid", "kelp"], "ease": 1 },
+    { "after": "kelp:thumbs", "shot": "close", "on": "squid", "ease": 0.8 },
+    { "after": "party", "shot": "wide", "from": "3q", "ease": 2 }
+  ],
+  "tracks": {
+    "squid": [
+      { "do": "wait", "for": 1 },
+      { "do": "lookAt", "at": "kelp" },
+      { "do": "wait", "until": "kelp:arrived" },
+      { "do": "turnTo", "to": "kelp" },
+      { "do": "face", "name": "surprise", "for": 0.8 },
+      { "do": "gesture", "name": "wave", "mark": "squid:waved" },
+      { "do": "face", "name": "talk", "for": 2.6 },
+      { "do": "wait", "until": "kelp:thumbs" },
+      { "do": "face", "name": "smile", "for": 1.2 },
+      { "do": "mark", "name": "party" },
+      { "do": "lookAt", "at": null },
+      { "do": "act", "mode": "dance", "for": 4.8 }
+    ],
+    "kelp": [
+      { "do": "wait", "for": 0.6 },
+      { "do": "walkTo", "to": "squid", "mark": "kelp:arrived" },
+      { "do": "lookAt", "at": "squid" },
+      { "do": "face", "name": "smile" },
+      { "do": "wait", "until": "squid:waved" },
+      { "do": "wait", "for": 2.2 },
+      { "do": "gesture", "name": "thumbsUp", "mark": "kelp:thumbs" },
+      { "do": "wait", "until": "party" },
+      { "do": "lookAt", "at": null },
+      { "do": "act", "mode": "dance", "for": 4.8 }
+    ]
+  }
+}

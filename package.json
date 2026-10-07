@@ -12,9 +12,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && tsx tools/bake.ts && vite build",
+    "build": "tsc --noEmit && tsx tools/check.ts && tsx tools/bake.ts && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "check": "tsx tools/check.ts",
+    "schema": "tsx tools/schema.ts",
     "bake": "tsx tools/bake.ts",
     "render": "tsx tools/render.ts",
     "diff": "tsx tools/diff.ts"
@@ -27,9 +29,11 @@
     "@types/node": "^26.6.4",
     "@types/pngjs": "^6.0.5",
     "@types/three": "^0.160.0",
+    "ajv": "^8.20.0",
     "pixelmatch": "^8.0.0",
     "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",
+    "ts-json-schema-generator": "^2.9.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.3"

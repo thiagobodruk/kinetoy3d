@@ -41,7 +41,8 @@ export class GestureLayer implements Layer {
   update(dt: number, s: LayerState): void {
     const bones = s.bones;
     // the mixer doesn't animate these: reset them every frame
-    if (!this.shoulderRestY) this.shoulderRestY = [bones.shoulderL.position.y, bones.shoulderR.position.y];
+    // recorded once per model (a new layer may start while a shoulder is raised)
+    if (!this.shoulderRestY) this.shoulderRestY = [bones.shoulderL.userData.restY ??= bones.shoulderL.position.y, bones.shoulderR.userData.restY ??= bones.shoulderR.position.y];
     bones.shoulderL.position.y = this.shoulderRestY[0];
     bones.shoulderR.position.y = this.shoulderRestY[1];
     bones.fingersL?.rotation.set(0, 0, 0);

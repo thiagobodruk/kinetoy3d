@@ -12,13 +12,18 @@ export interface HudItem { name: string; ui?: UiMeta }
 /** An actor button: its name and a color for its icon. */
 export interface HudActor { name: string; color: string }
 
+/** An entry of a text menu (camera views, scenes). */
+export interface HudEntry { name: string; text: string }
+
 export interface HudConfig {
+  scenes: HudEntry[];
   modes: HudItem[];
   faces: HudItem[];
   gestures: HudItem[];
 }
 
 export interface HudHandlers {
+  scene(id: string): void;
   selectActor(name: string): void;
   addActor(): void;
   mode(mode: string): void;
@@ -35,7 +40,7 @@ export const REST_ARMS = 'neutral';
 const STORAGE_KEY = 'hudCollapsed';
 const VIEW_LABELS: Record<ViewName, string> = { front: 'Front', side: 'Side', back: 'Back', '3q': '3/4' };
 
-type Group = 'actor' | 'mode' | 'face' | 'arm' | 'view';
+type Group = 'scene' | 'actor' | 'mode' | 'face' | 'arm' | 'view';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: Node[]) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -50,20 +55,18 @@ const iconButton = (ui: UiMeta, onclick: () => void) => {
 };
 
 export class Hud {
-  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { actor: new Map(), mode: new Map(), face: new Map(), arm: new Map(), view: new Map() };
+  private buttons: Record<Group, Map<string, HTMLButtonElement>> = { scene: new Map(), actor: new Map(), mode: new Map(), face: new Map(), arm: new Map(), view: new Map() };
   private actorItems: HTMLElement;
   private addActorBtn: HTMLButtonElement;
   private handlers: HudHandlers;
   private heads: Partial<Record<Group, HTMLButtonElement>> = {};
   private groups: HTMLElement[] = [];
   private toggle: HTMLButtonElement;
-  private menu: HTMLElement;
 
   constructor(private root: HTMLElement, config: HudConfig, h: HudHandlers) {
     this.handlers = h;
     root.replaceChildren();
     this.toggle = el('button', { id: 'hudToggle', onclick: () => this.toggleCollapsed() });
-    const sep = () => el('span', { className: 'sep' });
     // a group: head button (narrow screens) + its items; picking an item closes the tray
     const group = (label: string, headIcon: string, items: Node[], key?: Group) => {
       const head = iconButton({ label, icon: headIcon }, () => this.openGroup(g.classList.contains('open') ? null : g));
@@ -79,46 +82,48 @@ export class Hud {
       return b;
     });
 
-    // camera: view menu, zoom and reset
-    this.menu = el('div', { className: 'menu' });
-    for (const view of Object.keys(VIEWS) as ViewName[]) {
-      const b = el('button', { textContent: VIEW_LABELS[view], onclick: () => { h.view(view); this.menu.classList.remove('open'); } });
-      this.buttons.view.set(view, b);
-      this.menu.append(b);
-    }
-    const menuBtn = iconButton({ label: 'Camera view', icon: 'video-camera' }, () => this.menu.classList.toggle('open'));
-    menuBtn.addEventListener('click', (e) => e.stopPropagation());
-    // a tap/click outside closes the view menu and any open tray
-    addEventListener('pointerdown', (e) => {
-      const target = e.target as Node;
-      if (!this.menu.contains(target) && !menuBtn.contains(target)) this.menu.classList.remove('open');
-      if (!root.contains(target)) this.openGroup(null);
-    });
-    // reset: inside the camera group on wide screens, its own bar button on narrow ones
-    const resetButton = (className: string) => {
-      const b = iconButton({ label: 'Reset scene', icon: 'arrow-counter-clockwise' }, () => { h.reset(); this.openGroup(null); });
-      b.classList.add(className);
-      return b;
+    // a text menu (camera views, scenes): text chips in the group's tray
+    const textMenu = (name: Group, entries: HudEntry[], pick: (n: string) => void) => {
+      const menu = el('div', { className: 'menu' });
+      for (const entry of entries) {
+        const b = el('button', { textContent: entry.text, onclick: () => { pick(entry.name); this.openGroup(null); } });
+        this.buttons[name].set(entry.name, b);
+        menu.append(b);
+      }
+      return menu;
     };
+    // a tap/click outside the HUD closes the open tray
+    addEventListener('pointerdown', (e) => { if (!root.contains(e.target as Node)) this.openGroup(null); });
+
+    // camera: view menu, zoom and reset
+    const views = (Object.keys(VIEWS) as ViewName[]).map((v) => ({ name: v, text: VIEW_LABELS[v] }));
+    const viewMenu = textMenu('view', views, (v) => h.view(v as ViewName));
+    // reset: always the last button of the bar
+    const reset = iconButton({ label: 'Reset scene', icon: 'arrow-counter-clockwise' }, () => { h.reset(); this.openGroup(null); });
     const camera = group('Camera', 'video-camera', [
-      el('div', { className: 'menu-wrap' }, menuBtn, this.menu),
+      viewMenu,
       iconButton({ label: 'Zoom out (−)', icon: 'magnifying-glass-minus' }, () => h.zoom(ZOOM_STEP)),
-      iconButton({ label: 'Zoom in (+)', icon: 'magnifying-glass-plus' }, () => h.zoom(1 / ZOOM_STEP)),
-      resetButton('reset-wide')]);
+      iconButton({ label: 'Zoom in (+)', icon: 'magnifying-glass-plus' }, () => h.zoom(1 / ZOOM_STEP))]);
 
     const arms = [{ name: REST_ARMS, ui: { label: 'Arms at rest', icon: 'hand' } }, ...config.gestures];
     // actors: one button per actor (filled by setActors) + add
     this.addActorBtn = iconButton({ label: 'Add actor', icon: 'user-plus' }, () => { this.openGroup(null); h.addActor(); });
     const actors = group('Actors', 'users', [this.addActorBtn]);
     this.actorItems = actors.querySelector('.items')!;
+    const scenes = group('Scenes', 'film-slate', [textMenu('scene', config.scenes, h.scene)], 'scene');
+    // order: what the active actor does | the camera, who's on stage and scenes | reset
+    const divider = () => el('span', { className: 'sep' });
     root.append(
-      this.toggle, sep(),
-      actors, sep(),
-      group('Actions', 'person-simple', options('mode', config.modes, h.mode), 'mode'), sep(),
-      group('Face', 'smiley-blank', options('face', config.faces, h.face), 'face'), sep(),
-      group('Arms', 'hand', options('arm', arms, h.arm), 'arm'), sep(),
+      this.toggle,
+      group('Actions', 'person-simple', options('mode', config.modes, h.mode), 'mode'),
+      group('Face', 'smiley-blank', options('face', config.faces, h.face), 'face'),
+      group('Arms', 'hand', options('arm', arms, h.arm), 'arm'),
+      divider(),
       camera,
-      resetButton('reset-narrow'));
+      actors,
+      scenes,
+      divider(),
+      reset);
 
     // collapsed state is remembered across reloads when the browser allows it
     let collapsed = false;
@@ -138,6 +143,8 @@ export class Hud {
     this.actorItems.replaceChildren(...buttons, this.addActorBtn);
   }
   showActor(name: string): void { this.mark('actor', name); }
+  /** The scene loaded in the player, or null. */
+  showScene(id: string | null): void { this.mark('scene', id); }
 
   /** Opens one group's tray (narrow screens) and closes the others; null closes all. */
   private openGroup(g: HTMLElement | null): void {
@@ -148,7 +155,11 @@ export class Hud {
     for (const [name, b] of this.buttons[group]) b.classList.toggle('on', name === value);
     // the group head shows the active option's icon
     const head = this.heads[group], active = value !== null ? this.buttons[group].get(value) : undefined;
-    if (head && active) head.replaceChildren(active.firstElementChild!.cloneNode());
+    // only when it changes: show* runs every frame, and replacing the icon under the pointer
+    // between press and release would swallow the click
+    const activeIcon = active?.querySelector('i');
+    if (head && activeIcon && head.firstElementChild?.className !== activeIcon.className) head.replaceChildren(activeIcon.cloneNode());
+    head?.classList.toggle('on', group === 'scene' && value !== null); // a scene is loaded
   }
   showMode(mode: string): void { this.mark('mode', mode); }
   showFace(face: string): void { this.mark('face', face); }

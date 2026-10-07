@@ -780,7 +780,7 @@ export function squidRig(root: THREE.Object3D): Rig {
 }
 
 defineCharacter<SquidOptions>({
-  name: 'squid', build: buildSquid, materials: squidMaterials, rig: squidRig,
+  name: 'squid', build: buildSquid, materials: squidMaterials, rig: squidRig, validate: (o) => void resolve(o),
   accent: (o) => `#${resolve(o).PALETTE.shirt.toString(16).padStart(6, '0')}`,
   ui: { label: 'Squid', icon: 'user' },
 });

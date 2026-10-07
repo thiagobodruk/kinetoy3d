@@ -8,21 +8,31 @@ canvas { display: block; }
 #loading.toast { inset: 16px auto auto 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px;
   background: var(--glass); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
 
-/* HUD: a single slim toolbar of icon buttons, grouped by thin dividers */
+/* HUD: one compact bar with a button per group (showing its active option); clicking a group
+   opens a tray with its options above the bar. Same layout on every screen, larger on phones. */
 #hud { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content;
-  display: flex; justify-content: center; align-items: center; gap: 2px; padding: 4px;
-  max-width: calc(100vw - 24px); flex-wrap: wrap;
+  display: flex; justify-content: center; align-items: center; gap: 2px; padding: 4px; max-width: calc(100vw - 24px);
   background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
 #hud:empty { display: none; } /* not built yet (loading) */
-#hud .items { display: flex; gap: 2px; }
-#hud .group-head, #hud .reset-narrow { display: none; } /* only on narrow screens */
-#hud .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
-#hud button { position: relative; width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
-  border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer;
+#hud button { position: relative; width: 34px; height: 34px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 19px; cursor: pointer;
   transition: background .15s, color .15s; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-#hud button.on { background: var(--active); color: var(--ink); }
+#hud button.on, #hud .group.open .group-head { background: var(--active); color: var(--ink); }
 #hud button:focus-visible { outline: 2px solid rgba(29, 34, 48, .35); outline-offset: 1px; }
+/* dividers: after Arms and before Reset */
+#hud .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+
+/* the tray: centered over the whole bar */
+#hud .items { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; gap: 2px; padding: 4px;
+  background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+#hud .group.open .items { display: flex; }
+/* text menus (camera views, scenes) are listed in the tray as a row of text chips */
+#hud .menu { display: flex; flex-basis: 100%; flex-wrap: wrap; justify-content: center; gap: 2px; }
+#hud .menu button { width: auto; min-width: 56px; height: 32px; padding: 0 10px; font: 13px system-ui, sans-serif; }
+
 /* collapsed: only the toggle stays visible, tucked into the bottom-left corner */
 #hud.collapsed { left: 16px; transform: none; }
 #hud.collapsed > :not(#hudToggle) { display: none; }
@@ -30,41 +40,45 @@ canvas { display: block; }
 /* hover and tooltips (from aria-label) only where there's a real pointer: on touch they'd stick */
 @media (hover: hover) {
   #hud button:hover { background: var(--hover); color: var(--ink); }
-  #hud button.on:hover { background: var(--active); }
+  #hud button.on:hover, #hud .group.open .group-head:hover { background: var(--active); }
   #hud button[aria-label]:hover::before { content: attr(aria-label); position: absolute; bottom: calc(100% + 8px); left: 50%;
     transform: translateX(-50%); white-space: nowrap; padding: 3px 7px; border-radius: 6px; font-size: 11px;
     background: var(--ink); color: #fff; pointer-events: none; z-index: 2; }
   #hud.collapsed #hudToggle:hover::before { left: 0; transform: none; }
-  #hud .menu button:hover::before { content: none; }
+  #hud .group.open .group-head:hover::before { content: none; } /* the tray is already open */
 }
 
-/* camera view menu */
-.menu-wrap { position: relative; }
-.menu { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: none; min-width: 96px; padding: 4px;
-  background: rgba(255, 255, 255, .92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 16px rgba(0, 0, 0, .08); z-index: 3; }
-.menu.open { display: block; }
-#hud .menu button { width: 100%; height: 28px; display: block; text-align: left; padding: 0 10px; font: 12px system-ui, sans-serif; }
-
-/* ---------- narrow screens: one row of large group buttons; each opens a tray of options above ---------- */
+/* ---------- phones: larger targets, no dividers ---------- */
 @media (max-width: 640px) {
-  #hud { bottom: calc(12px + env(safe-area-inset-bottom)); gap: 4px; padding: 6px; border-radius: 16px; flex-wrap: nowrap; }
+  #hud { bottom: calc(12px + env(safe-area-inset-bottom)); padding: 6px; border-radius: 16px; }
   #hud.collapsed { left: 12px; }
-  #hud button { width: 44px; height: 44px; border-radius: 12px; font-size: 23px; }
+  #hud button { width: 40px; height: 40px; border-radius: 12px; font-size: 22px; }
   #hud .sep { display: none; }
-  #hud .group-head, #hud .reset-narrow { display: grid; }
-  #hud .reset-wide { display: none; }
-  #hud .group.open .group-head { background: var(--active); color: var(--ink); }
-  /* the tray: centered over the whole bar */
-  #hud .items { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-    width: max-content; max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; gap: 4px; padding: 6px;
-    background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
-  #hud .group.open .items { display: flex; }
-  /* camera tray: the views as a row of text chips (no nested menu), zoom and reset below */
-  #hud .menu-wrap { display: contents; }
-  #hud .menu-wrap > button { display: none; }
-  #hud .menu { position: static; transform: none; display: flex; flex-basis: 100%; justify-content: center; gap: 4px;
-    min-width: 0; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  #hud .menu button { width: auto; min-width: 64px; height: 44px; display: grid; padding: 0 12px; font: 15px system-ui, sans-serif; text-align: center; }
+  #hud .items { gap: 4px; padding: 6px; border-radius: 16px; }
+  #hud .menu { gap: 4px; }
+  #hud .menu button { min-width: 64px; height: 44px; padding: 0 12px; font: 15px system-ui, sans-serif; }
+}
+
+/* ---------- scene player (above the HUD) ---------- */
+#scenebar { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom) + 52px); transform: translateX(-50%);
+  width: min(560px, calc(100vw - 24px)); box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px;
+  background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); font-size: 12px; color: var(--muted); }
+#scenebar[hidden] { display: none; }
+#scenebar button { width: 30px; height: 30px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink); font-size: 18px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+#scenebar .title { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
+#scenebar .time { flex: none; font-variant-numeric: tabular-nums; }
+#scenebar input[type=range] { flex: 1; min-width: 60px; height: 20px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+#scenebar input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--ink) var(--progress, 0%), rgba(29, 34, 48, .15) var(--progress, 0%)); }
+#scenebar input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(29, 34, 48, .15); }
+#scenebar input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--ink); }
+#scenebar input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--ink); }
+#scenebar input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--ink); }
+@media (hover: hover) { #scenebar button:hover { background: var(--hover); } }
+@media (max-width: 640px) {
+  #scenebar { bottom: calc(12px + env(safe-area-inset-bottom) + 62px); }
+  #scenebar button { width: 40px; height: 40px; font-size: 22px; }
+  #scenebar .title { display: none; }
 }

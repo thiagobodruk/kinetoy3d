@@ -1,0 +1,53 @@
+{
+  "$schema": "./scene.schema.json",
+  "id": "dance-party",
+  "title": "Dance party",
+  "loop": true,
+  "cast": [
+    { "actor": "kelp", "preset": "kelp", "at": [-2.4, 0] },
+    { "actor": "squid", "preset": "squid", "at": [-0.8, 0] },
+    { "actor": "marlin", "preset": "marlin", "at": [0.8, 0] },
+    { "actor": "sunny", "preset": "sunny", "at": [2.4, 0] }
+  ],
+  "camera": [
+    { "t": 0, "shot": "wide" },
+    { "t": 3, "shot": "medium", "on": "squid", "from": "3q", "ease": 1.5 },
+    { "t": 6, "shot": "medium", "on": ["marlin", "sunny"], "from": -30, "ease": 1.5 },
+    { "t": 9.5, "shot": "close", "on": "kelp", "from": 25, "ease": 1.2 },
+    { "t": 12.5, "shot": "wide", "from": "3q", "ease": 2 }
+  ],
+  "tracks": {
+    "squid": [
+      { "do": "act", "mode": "dance", "async": true },
+      { "do": "face", "name": "smile" },
+      { "do": "wait", "for": 7 },
+      { "do": "gesture", "name": "armUp" },
+      { "do": "wait", "for": 6 }
+    ],
+    "marlin": [
+      { "do": "wait", "for": 1.2 },
+      { "do": "act", "mode": "dance" },
+      { "do": "face", "name": "talk", "for": 4 },
+      { "do": "gesture", "name": "thumbsUp" },
+      { "do": "wait", "for": 7 }
+    ],
+    "sunny": [
+      { "do": "wait", "for": 2.4 },
+      { "do": "act", "mode": "dance" },
+      { "do": "face", "name": "surprise", "for": 1.5 },
+      { "do": "face", "name": "smile" },
+      { "do": "wait", "for": 5 },
+      { "do": "gesture", "name": "wave" },
+      { "do": "wait", "for": 4 }
+    ],
+    "kelp": [
+      { "do": "lookAt", "at": "squid" },
+      { "do": "face", "name": "sad", "for": 3 },
+      { "do": "gesture", "name": "shrug" },
+      { "do": "lookAt", "at": null },
+      { "do": "act", "mode": "dance" },
+      { "do": "face", "name": "smile", "for": 6 },
+      { "do": "wait", "for": 2 }
+    ]
+  }
+}

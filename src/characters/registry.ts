@@ -19,6 +19,8 @@ export interface CharacterDef<Options = any> {
   materials: (options: Options) => Record<string, THREE.Material>;
   /** Finds the rig parts in a built or deserialized model. */
   rig: (root: THREE.Object3D) => Rig;
+  /** Throws a readable error if the options are invalid (used by npm run check). */
+  validate?: (options: Options) => void;
   /** Main color for these options (tints the actor's HUD button). */
   accent?: (options: Options) => string;
   ui?: UiMeta;

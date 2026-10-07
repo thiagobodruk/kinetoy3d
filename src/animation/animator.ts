@@ -1,5 +1,5 @@
 // Animator: drives one character by stacking animation layers, in this order:
-//   body (looping clips) → blink → face → talk gestures → idle life → arm gesture
+//   body (looping clips) → blink → face → talk gestures → idle life → look → arm gesture
 // Each layer writes on top of the pose left by the previous ones.
 import type * as THREE from 'three';
 import type { Rig } from '../rig/rig';
@@ -10,12 +10,14 @@ import { BodyLayer, type BodyStateName, type MotionContext } from './layers/body
 import { FaceLayer } from './layers/face';
 import { GestureLayer } from './layers/gesture';
 import { IdleLifeLayer } from './layers/idle-life';
+import { LookLayer } from './layers/look';
 import { TalkGestureLayer } from './layers/talk-gestures';
 
 export class Animator {
   readonly body: BodyLayer;
   readonly face: FaceLayer;
   readonly gesture: GestureLayer;
+  readonly look: LookLayer;
   private layers: Layer[];
   private state: LayerState;
 
@@ -24,7 +26,8 @@ export class Animator {
     this.body = new BodyLayer(root);
     this.face = new FaceLayer(rig);
     this.gesture = new GestureLayer();
-    this.layers = [this.body, new BlinkLayer(), this.face, new TalkGestureLayer(), new IdleLifeLayer(), this.gesture];
+    this.look = new LookLayer();
+    this.layers = [this.body, new BlinkLayer(), this.face, new TalkGestureLayer(), new IdleLifeLayer(), this.look, this.gesture];
     this.state = { rig, bones: rig.bones, body: this.body.current, expression: expressions.get('neutral'), squint: 0 };
   }
 

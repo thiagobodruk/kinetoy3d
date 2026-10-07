@@ -7,13 +7,20 @@ import type { CharacterInstance } from '../characters/registry';
 import type { Rig } from '../rig/rig';
 import { Motion, type Mode } from './motion';
 
+/** Height of the face above the feet (where actors look at each other). */
+const FACE_HEIGHT = 1.45;
+
 export class Actor {
   readonly object: THREE.Object3D;
   readonly rig: Rig;
-  readonly animator: Animator;
+  animator: Animator;
   readonly motion: Motion;
   /** Preset id it was created from, if any. */
   preset?: string;
+  /** Main color (tints its HUD button). */
+  color = '#6b7180';
+  /** Order in which it was added (keeps the list stable when loads finish out of order). */
+  order = 0;
   private timers: { left: number; done: () => void }[] = [];
 
   constructor(readonly name: string, readonly type: string, instance: CharacterInstance, home = new THREE.Vector3()) {
@@ -36,6 +43,15 @@ export class Actor {
   get gestureName(): string | null { return this.animator.activeGesture; }
   stopGesture(immediate = false): void { this.animator.stopGesture(immediate); }
 
+  /** Puts the actor at (x, z) facing `yaw` (radians; 0 = +Z), idle; that becomes its home. */
+  place(x: number, z: number, yaw = 0): void { this.motion.place(x, z, yaw); }
+
+  /** Fresh animation state (clips at time 0, timers, smoothed values): replays start identical. */
+  resetAnimation(): void {
+    this.animator = new Animator(this.object, this.rig);
+    this.timers = [];
+  }
+
   /** Home position, idle, neutral face, no gesture. */
   reset(): void {
     this.motion.reset();
@@ -49,6 +65,20 @@ export class Actor {
   gesture(name: string): Promise<void> { return this.animator.playGesture(name); }
   /** Walks to (x, z) on the ground. */
   walkTo(x: number, z: number): Promise<void> { return this.motion.walkTo(x, z); }
+  /** Turns in place to face a point (or another actor). */
+  turnTo(target: THREE.Vector3 | Actor): Promise<void> {
+    const p = target instanceof Actor ? target.position : target;
+    return this.motion.turnTo(Math.atan2(p.x - this.position.x, p.z - this.position.z));
+  }
+  /** Turns the head toward a point or another actor's face (kept until changed); null releases it. */
+  lookAt(target: THREE.Vector3 | Actor | null): void {
+    if (!target) { this.animator.look.target = null; return; }
+    const point = target instanceof Actor ? new THREE.Vector3() : target.clone();
+    this.animator.look.target = target instanceof Actor
+      ? () => point.set(target.position.x, target.position.y + FACE_HEIGHT, target.position.z)
+      : () => point;
+  }
+
   /** Waits `seconds` of stage time. */
   wait(seconds: number): Promise<void> {
     return new Promise((done) => this.timers.push({ left: seconds, done }));
