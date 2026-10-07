@@ -49,7 +49,7 @@
   </div>
   <div class="row">
     <span class="label">Câmera</span>
-    <button data-view="front">Frente</button>
+    <button data-view="front" class="on">Frente</button>
     <button data-view="side">Lado</button>
     <button data-view="back">Costas</button>
     <button data-view="3q">3/4</button>
@@ -154,7 +154,12 @@ addEventListener('keydown', (e) => {
 });
 
 const views = { front: [0, 1.2, 6.2], side: [6.2, 1.2, 0], back: [0, 1.2, -6.2], '3q': [4.2, 1.8, 4.6] };
-document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
+const viewButtons = document.querySelectorAll('[data-view]');
+const setViewButton = (name) => viewButtons.forEach((b) => b.classList.toggle('on', b.dataset.view === name));
+// arrastar para orbitar sai das vistas pré-definidas
+controls.addEventListener('start', () => setViewButton(null));
+viewButtons.forEach((b) => b.onclick = () => {
+  setViewButton(b.dataset.view);
   const v = views[b.dataset.view];
   camera.position.set(character.position.x + v[0], v[1], character.position.z + v[2]);
   controls.target.set(character.position.x, 1.0, character.position.z);

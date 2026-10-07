@@ -16,6 +16,8 @@ const REST = {
   elbowR: { r: [-0.38, -0.15, 0.1] },
   legL: { r: [0, 0, 0] },
   legR: { r: [0, 0, 0] },
+  kneeL: { r: [0, 0, 0] },
+  kneeR: { r: [0, 0, 0] },
   footL: { r: [0, 0, 0] },
   footR: { r: [0, 0, 0] },
 };
@@ -82,14 +84,23 @@ export function createWalkClip() {
     const bob = 0.5 - 0.5 * Math.cos(a * 2); // dois picos por ciclo
     const liftL = Math.max(0, -s); // pé esquerdo no ar quando a perna volta
     const liftR = Math.max(0, s);
+    // joelho: quase reto ao pisar, leve flexão no apoio, dobra forte no balanço (perna indo à frente)
+    const kneeL = 0.15 + 1.1 * Math.max(0, c) ** 1.2; // até ~72° no meio do balanço
+    const kneeR = 0.15 + 1.1 * Math.max(0, -c) ** 1.2;
     return {
       hips: { p: [0.015 * s, 0.035 * bob - 0.01, 0], r: [0.04, 0.12 * s, 0.05 * c] },
       spine: { r: [0.05 + 0.02 * bob, -0.18 * s, -0.04 * c] },
       head: { r: [-0.04 - 0.03 * bob, 0.08 * s, 0.03 * c] },
-      legL: { r: [-0.6 * s, 0, 0] },
-      legR: { r: [0.6 * s, 0, 0] },
-      footL: { r: [0.35 * s + 0.6 * liftL, 0, 0] },
-      footR: { r: [-0.35 * s + 0.6 * liftR, 0, 0] },
+      legL: { r: [-0.6 * s - 0.3 * Math.max(0, c) ** 1.2, 0, 0] }, // coxa sobe no balanço
+      legR: { r: [0.6 * s - 0.3 * Math.max(0, -c) ** 1.2, 0, 0] },
+      // pé acompanha a passada: ponta sobe ao pisar à frente, desce no impulso atrás,
+      // com leve giro da ponta e rolamento lateral
+      kneeL: { r: [kneeL, 0, 0] },
+      kneeR: { r: [kneeR, 0, 0] },
+      // pé (ângulo no mundo): ponta ~25° para cima ao pisar, ~55° para baixo no impulso,
+      // plano no apoio e levemente pendente no balanço (compensa parte da dobra do joelho)
+      footL: { r: [0.15 * s + 0.55 * liftL - 0.73 * kneeL + 0.3 * Math.max(0, c) ** 1.2 - 0.08, 0.1 * s, -0.04 * c] },
+      footR: { r: [-0.15 * s + 0.55 * liftR - 0.73 * kneeR + 0.3 * Math.max(0, -c) ** 1.2 - 0.08, 0.1 * s, -0.04 * c] },
       shoulderL: { r: [0.55 * s, 0, 0.04] },
       shoulderR: { r: [-0.55 * s, 0, -0.04] },
       elbowL: { r: [-0.3 - 0.25 * Math.max(0, -s), 0, 0] },
@@ -147,7 +158,13 @@ export class CharacterStateMachine {
     this.browTimer = 0;     // tempo restante do arqueamento atual
 
     // gestos de fala: cada braço persegue uma pose-alvo que muda a cada "batida"
-    this.gesture = [1, -1].map((sx) => ({ sx, cur: { s: 0, e: 0, o: 0, t: 0 }, tgt: { s: 0, e: 0, o: 0, t: 0 }, timer: 0 }));
+    this.gesture = [1, -1].map((sx) => ({ sx, cur: { s: 0, e: 0, o: 0, t: 0, w: 0 }, tgt: { s: 0, e: 0, o: 0, t: 0, w: 0 }, timer: 0 }));
+    this.gestureTmp = new THREE.Object3D();
+
+    // idle neutro: balanço lateral lento e olhadas eventuais para os lados (camada sobre o mixer)
+    this.idleW = 0;          // peso da camada (0 fora do idle neutro)
+    this.swayT = 0;
+    this.look = { cur: 0, tgt: 0, timer: 2.5 };
   }
 
   setExpression(name) {
@@ -244,39 +261,77 @@ export class CharacterStateMachine {
     // leve aceno de cabeça acompanhando a fala (sobre a pose do mixer)
     if (this.expression === 'talk' && ud.bones.head) ud.bones.head.rotateX(-f.open * 0.035);
     this.updateGestures(dt);
+    this.updateIdleLife(dt);
   }
 
-  // gesticulação com as mãos durante a fala (camada aditiva sobre o idle/walk)
+  updateIdleLife(dt) {
+    const bones = this.model.userData.bones;
+    const on = this.current === 'idle' && this.expression === 'neutral';
+    this.idleW += ((on ? 1 : 0) - this.idleW) * Math.min(1, dt * 2);
+    this.swayT += dt;
+    const L = this.look;
+    L.timer -= dt;
+    if (L.timer <= 0) {
+      // às vezes olha para um lado; senão volta ao centro
+      const glance = L.tgt === 0 && Math.random() < 0.6;
+      L.tgt = glance ? (Math.random() < 0.5 ? -1 : 1) * (0.18 + Math.random() * 0.17) : 0;
+      L.timer = glance ? 1.2 + Math.random() * 1.6 : 2.5 + Math.random() * 3;
+    }
+    L.cur += (L.tgt - L.cur) * Math.min(1, dt * 2.5);
+    const w = this.idleW;
+    if (w < 0.001) return;
+    // balanço lateral (período ~5 s): quadril inclina, pernas compensam (pés no chão)
+    const sway = w * 0.03 * Math.sin((this.swayT * Math.PI * 2) / 5.2);
+    bones.hips?.rotateZ(sway);
+    bones.legL?.rotateZ(-sway);
+    bones.legR?.rotateZ(-sway);
+    bones.spine?.rotateZ(sway * 0.4);
+    bones.head?.rotateZ(-sway * 0.5);
+    bones.head?.rotateY(w * L.cur);
+  }
+
+  // gesticulação com as mãos durante a fala. O gesto é uma pose de braço completa
+  // (descanso + gesto) que substitui o idle/walk enquanto fala: andando, as mãos gesticulam
+  // igual ao idle, sem somar o balanço do passo (que girava o braço de forma tosca).
   updateGestures(dt) {
     const bones = this.model.userData.bones;
     const talking = this.expression === 'talk';
+    const tmp = this.gestureTmp;
     for (const g of this.gesture) {
       g.timer -= dt;
       if (g.timer <= 0) {
         const dominant = g.sx < 0; // mão direita gesticula mais
-        const active = talking && Math.random() < (dominant ? 0.85 : 0.55);
+        const active = talking && Math.random() < (dominant ? 0.75 : 0.45);
         g.tgt = active
           ? {
-              s: -(0.2 + Math.random() * 0.55),   // ombro: braço para a frente
-              e: -(0.7 + Math.random() * 0.6),    // cotovelo: antebraço sobe
-              o: 0.08 + Math.random() * 0.22,     // abre um pouco para o lado
-              t: 0.3 + Math.random() * 0.6,       // gira o antebraço (palma para cima)
+              s: -(0.2 + Math.random() * 0.5),    // ombro: braço para a frente
+              e: -(0.5 + Math.random() * 0.5),    // cotovelo: antebraço sobe (além do descanso)
+              o: 0.06 + Math.random() * 0.16,     // abre um pouco para o lado
+              t: 0.3 + Math.random() * 0.5,       // gira o antebraço (palma para cima)
+              w: 1,
             }
-          : talking ? { s: -0.12, e: -0.35, o: 0.04, t: 0.1 } : { s: 0, e: 0, o: 0, t: 0 };
-        g.timer = talking ? 0.45 + Math.random() * 0.75 : 0.3;
+          : talking
+            ? { s: -0.12, e: -0.35, o: 0.04, t: 0.1, w: 1 } // entre gestos: braço levemente erguido
+            : { ...g.tgt, w: 0 };                 // sem fala: volta ao idle/walk
+        g.timer = talking ? (active ? 0.6 + Math.random() * 0.8 : 0.4 + Math.random() * 0.6) : 0.3;
       }
-      const k = Math.min(1, dt * (talking ? 6 : 4));
-      for (const key of ['s', 'e', 'o', 't']) g.cur[key] += (g.tgt[key] - g.cur[key]) * k;
-      const sh = bones[g.sx > 0 ? 'shoulderL' : 'shoulderR'];
-      const el = bones[g.sx > 0 ? 'elbowL' : 'elbowR'];
+      const k = Math.min(1, dt * 5);
+      for (const key of ['s', 'e', 'o', 't', 'w']) g.cur[key] += (g.tgt[key] - g.cur[key]) * k;
+      const w = g.cur.w;
+      if (w < 0.001) continue;
+      const shName = g.sx > 0 ? 'shoulderL' : 'shoulderR', elName = g.sx > 0 ? 'elbowL' : 'elbowR';
+      const sh = bones[shName], el = bones[elName];
       if (!sh || !el) continue;
-      sh.rotateX(g.cur.s);
-      sh.rotateZ(g.sx * g.cur.o);
-      el.rotateX(g.cur.e);
-      el.rotateY(g.sx * g.cur.t);
+      tmp.rotation.set(...REST[shName].r);
+      tmp.rotateX(g.cur.s);
+      tmp.rotateZ(g.sx * g.cur.o);
+      sh.quaternion.slerp(tmp.quaternion, w);
+      tmp.rotation.set(...REST[elName].r);
+      tmp.rotateX(g.cur.e);
+      tmp.rotateY(g.sx * g.cur.t);
+      el.quaternion.slerp(tmp.quaternion, w);
     }
   }
-
 
   updateBlink(dt) {
     const eyes = this.model.userData.eyes;

@@ -55,9 +55,11 @@ const BONES = [
   ['shoulderR', 'spine', [-0.33, 0.41, 0], [0, 0, -ARM_SPREAD]],
   ['elbowR', 'shoulderR', [0, -0.25, 0], [-0.38, -0.15, 0.1]],
   ['legL', 'hips', [0.16, -0.02, 0]],
-  ['footL', 'legL', [0, -0.34, 0]],
+  ['kneeL', 'legL', [0, -0.17, 0]],   // joelho no meio da perna (y ≈ 0.33)
+  ['footL', 'kneeL', [0, -0.17, 0]],
   ['legR', 'hips', [-0.16, -0.02, 0]],
-  ['footR', 'legR', [0, -0.34, 0]],
+  ['kneeR', 'legR', [0, -0.17, 0]],
+  ['footR', 'kneeR', [0, -0.17, 0]],
 ];
 
 function buildSkeleton() {
@@ -562,11 +564,24 @@ export function createCharacterModel() {
     bones.spine.add(star);
   }
 
-  // ---- calça (SkinnedMesh: pélvis → hips, pernas → legs) ----
+  // ---- calça (SkinnedMesh: pélvis → hips, coxas → legs, canelas → knees) ----
   const pelvis = pelvisField(), lgL = legField(1), lgR = legField(-1);
+  // campos só para os pesos: coxa acima do joelho (y 0.33), canela abaixo
+  const thigh = (sx) => roundCone([sx * 0.16, 0.47, 0], [sx * 0.16, 0.34, 0.003], 0.125);
+  const shin = (sx) => roundCone([sx * 0.16, 0.32, 0.003], [sx * 0.16, 0.2, 0.005], 0.12);
   const pantsGeo = polygonize(union([pelvis, lgL, lgR], 0.05), {
     min: [-0.36, 0.14, -0.3], max: [0.36, 0.66, 0.3], cell: 0.009,
-    weights: softWeights([[index.hips, pelvis], [index.legL, lgL], [index.legR, lgR]], 0.02),
+    weights: (() => {
+      const legs = softWeights([[index.legL, thigh(1)], [index.kneeL, shin(1)], [index.legR, thigh(-1)], [index.kneeR, shin(-1)]], 0.03);
+      const hipLeg = softWeights([[index.hips, pelvis], [-1, lgL], [-2, lgR]], 0.02);
+      // pélvis × perna como antes; a parte "perna" se divide entre coxa e canela
+      return (x, y, z) => {
+        const hw = hipLeg(x, y, z), lw = legs(x, y, z);
+        const sumH = hw.reduce((a, [, w]) => a + w, 0), sumL = lw.reduce((a, [, w]) => a + w, 0);
+        const wh = hw[0][1] / sumH, wl = 1 - wh;
+        return [[index.hips, wh], ...lw.map(([b, w]) => [b, (wl * w) / sumL])];
+      };
+    })(),
   });
   const pants = new THREE.SkinnedMesh(pantsGeo, mats.pants);
   pants.name = 'pantsMesh';
