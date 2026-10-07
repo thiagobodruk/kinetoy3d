@@ -86,11 +86,17 @@ export class Hud {
       if (!this.menu.contains(target) && !menuBtn.contains(target)) this.menu.classList.remove('open');
       if (!root.contains(target)) this.openGroup(null);
     });
+    // reset: inside the camera group on wide screens, its own bar button on narrow ones
+    const resetButton = (className: string) => {
+      const b = iconButton({ label: 'Reset scene', icon: 'arrow-counter-clockwise' }, () => { h.reset(); this.openGroup(null); });
+      b.classList.add(className);
+      return b;
+    };
     const camera = group('Camera', 'video-camera', [
       el('div', { className: 'menu-wrap' }, menuBtn, this.menu),
       iconButton({ label: 'Zoom out (−)', icon: 'magnifying-glass-minus' }, () => h.zoom(ZOOM_STEP)),
       iconButton({ label: 'Zoom in (+)', icon: 'magnifying-glass-plus' }, () => h.zoom(1 / ZOOM_STEP)),
-      iconButton({ label: 'Reset scene', icon: 'arrow-counter-clockwise' }, () => { h.reset(); this.openGroup(null); })]);
+      resetButton('reset-wide')]);
 
     const arms = [{ name: REST_ARMS, ui: { label: 'Arms at rest', icon: 'hand' } }, ...config.gestures];
     root.append(
@@ -98,7 +104,8 @@ export class Hud {
       group('Actions', 'person-simple', options('mode', config.modes, h.mode), 'mode'), sep(),
       group('Face', 'smiley-blank', options('face', config.faces, h.face), 'face'), sep(),
       group('Arms', 'hand', options('arm', arms, h.arm), 'arm'), sep(),
-      camera);
+      camera,
+      resetButton('reset-narrow'));
 
     // collapsed state is remembered across reloads when the browser allows it
     let collapsed = false;

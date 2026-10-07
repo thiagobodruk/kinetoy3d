@@ -30,7 +30,7 @@ Then open <http://localhost:5178>.
 
 The HUD is a single toolbar at the bottom center of the screen. Hover over a button to see its name and shortcut. The `‹` button collapses the toolbar into a small `›` button in the bottom-left corner.
 
-On narrow screens (phones), the toolbar shows one large button per group, with the icon of the active option. Tapping a group opens its options in a tray above the bar; picking an option or tapping outside closes it.
+On narrow screens (phones), the toolbar shows one large button per group, with the icon of the active option, plus a Reset button. Tapping a group opens its options in a tray above the bar; picking an option or tapping outside closes it.
 
 The buttons are generated from the registered modes, expressions and gestures (see [Adding expressions and gestures](#adding-expressions-and-gestures)).
 
