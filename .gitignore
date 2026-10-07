@@ -11,3 +11,6 @@ evidence/
 
 # estado local do pipeline img2threejs
 .img2threejs/
+
+# configuração local do app Claude
+.claude/
