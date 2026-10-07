@@ -101,8 +101,10 @@ export function createWalkClip() {
       // plano no apoio e levemente pendente no balanço (compensa parte da dobra do joelho)
       footL: { r: [0.15 * s + 0.55 * liftL - 0.73 * kneeL + 0.3 * Math.max(0, c) ** 1.2 - 0.08, 0.1 * s, -0.04 * c] },
       footR: { r: [-0.15 * s + 0.55 * liftR - 0.73 * kneeR + 0.3 * Math.max(0, -c) ** 1.2 - 0.08, 0.1 * s, -0.04 * c] },
-      shoulderL: { r: [0.55 * s, 0, 0.04] },
-      shoulderR: { r: [-0.55 * s, 0, -0.04] },
+      // braço vai menos para trás do que para a frente (a manga não estica demais)
+      // e abre um pouco para o lado ao ir para trás, afastando a manga das costas
+      shoulderL: { r: [s > 0 ? 0.25 * s : 0.55 * s, 0, 0.04 + 0.08 * Math.max(0, s)] },
+      shoulderR: { r: [s < 0 ? -0.25 * s : -0.55 * s, 0, -0.04 - 0.08 * Math.max(0, -s)] },
       elbowL: { r: [-0.3 - 0.25 * Math.max(0, -s), 0, 0] },
       elbowR: { r: [-0.3 - 0.25 * Math.max(0, s), 0, 0] },
     };

@@ -532,9 +532,14 @@ export function createCharacterModel() {
     const depth = 0.008 + (SEAM_DEPTH - 0.008) * top;
     return smin(dT, dS, k) + depth * Math.exp(-u * u);
   });
+  // transição larga e deslocada para o tronco: a manga inteira segue o ombro (cobre o braço)
+  // e quem estica é o tronco junto à cava, em vez de a costura rasgar
+  const shirtWeights = softWeights([[index.spine, torso],
+    [index.shoulderL, { eval: (x, y, z) => slL.eval(x, y, z) - 0.03 }],
+    [index.shoulderR, { eval: (x, y, z) => slR.eval(x, y, z) - 0.03 }]], 0.03);
   const shirtGeo = polygonize(shirtField, {
     min: [-0.58, 0.44, -0.38], max: [0.58, 1.1, 0.4], cell: 0.0075, smooth: 6,
-    weights: softWeights([[index.spine, torso], [index.shoulderL, slL], [index.shoulderR, slR]], 0.012),
+    weights: shirtWeights,
   });
   const shirt = new THREE.SkinnedMesh(shirtGeo, mats.shirt);
   shirt.name = 'shirtMesh';
@@ -596,15 +601,30 @@ export function createCharacterModel() {
     // ombro → cotovelo → punho (dentro da palma): quase cilíndrico, afinando de leve,
     // com um volume discreto no antebraço
     const { nodes: [segU, segF], all: tubeArm } = tube(
-      [at(mS, [0, -0.08, 0]), at(mS, [0, -0.25, 0]), at(mE, [0, -0.15, 0])],
+      [at(mS, [0, -0.11, 0]), at(mS, [0, -0.25, 0]), at(mE, [0, -0.15, 0])],
       (u) => 0.066 - 0.017 * Math.pow(u, 1.4) + 0.0025 * Math.exp(-(((u - 0.68) / 0.14) ** 2)));
     const hand = transform(handLocal(sx), mE);
     const upper = segU, fore = union([segF, hand], 0.02);
-    const arm = union([tubeArm, hand], 0.02);
+    // topo do braço cortado bem dentro da manga (y local −0.1; a manga vai até −0.16):
+    // ao balançar o braço, a parte da manga presa ao tronco não deixa a pele aparecer
+    const iS = mS.clone().invert().elements;
+    const armW = softWeights([[index[sh], upper], [index[el], fore]], 0.06);
+    const arm = custom(union([tubeArm, hand], 0.02), (d, x, y, z) =>
+      Math.max(d, iS[1] * x + iS[5] * y + iS[9] * z + iS[13] + 0.1));
     const x0 = sx > 0 ? 0.2 : -0.75, x1 = sx > 0 ? 0.75 : -0.2;
     const geo = polygonize(arm, {
       min: [x0, 0.25, -0.2], max: [x1, 1.3, 0.25], cell: 0.0032, smooth: 8,
-      weights: softWeights([[index[sh], upper], [index[el], fore]], 0.06),
+      // topo do braço (escondido na manga) deforma com os mesmos pesos da camisa,
+      // para não atravessar a cava quando o braço balança
+      weights: (x, y, z) => {
+        const ly = iS[1] * x + iS[5] * y + iS[9] * z + iS[13];
+        const t = smoothstep(ly, -0.2, -0.13);
+        const wa = armW(x, y, z);
+        if (t <= 0) return wa;
+        const ws = shirtWeights(x, y, z);
+        const sa = wa.reduce((a, [, w]) => a + w, 0), ss = ws.reduce((a, [, w]) => a + w, 0);
+        return [...wa.map(([b, w]) => [b, (1 - t) * w / sa]), ...ws.map(([b, w]) => [b, t * w / ss])];
+      },
     });
     const m = new THREE.SkinnedMesh(geo, mats.skin);
     m.name = sx > 0 ? 'armMeshL' : 'armMeshR';
