@@ -46,15 +46,14 @@ function vinyl(color, opts = {}) {
 // ---------- esqueleto (pose de bind: posição local + rotação local de cada osso) ----------
 // Os ombros já nascem abertos (rot Z) para os braços ficarem afastados do corpo.
 const ARM_SPREAD = 0.34;     // braço levemente aberto a partir do ombro
-const FOREARM_SPREAD = -0.14; // cotovelo quase reto: braço contínuo, sem 'quebra'
 const BONES = [
   ['hips', null, [0, 0.52, 0]],
   ['spine', 'hips', [0, 0, 0]],
   ['head', 'spine', [0, 0.5, 0]],
   ['shoulderL', 'spine', [0.33, 0.41, 0], [0, 0, ARM_SPREAD]],
-  ['elbowL', 'shoulderL', [0, -0.2, 0], [0, 0, FOREARM_SPREAD]],
+  ['elbowL', 'shoulderL', [0, -0.25, 0], [-0.38, 0.15, -0.1]], // bind = pose de descanso (sem deformação no idle)
   ['shoulderR', 'spine', [-0.33, 0.41, 0], [0, 0, -ARM_SPREAD]],
-  ['elbowR', 'shoulderR', [0, -0.2, 0], [0, 0, -FOREARM_SPREAD]],
+  ['elbowR', 'shoulderR', [0, -0.25, 0], [-0.38, -0.15, 0.1]],
   ['legL', 'hips', [0.16, -0.02, 0]],
   ['footL', 'legL', [0, -0.34, 0]],
   ['legR', 'hips', [-0.16, -0.02, 0]],
@@ -413,10 +412,9 @@ function legField(sx) {
 // antebraço + mão (espaço local do cotovelo). inward = direção da palma (para o corpo).
 // Dedos são formas próprias, encostadas e fundidas com raio pequeno: a separação aparece
 // como vales suaves (toy de vinil), não como cortes.
-function forearmHandLocal(sx) {
+function handLocal(sx) {
   const inward = -sx;
-  const forearm = roundCone([0, 0.03, 0], [0, -0.19, 0], 0.07, 0.058);
-  const palm = ellipsoid([inward * 0.004, -0.262, 0.0], [0.046, 0.068, 0.064]);
+    const palm = ellipsoid([inward * 0.004, -0.262, 0.0], [0.046, 0.068, 0.064]);
   // dedos curtos e roliços, cada um uma peça contínua (sem relevo de falanges):
   // nascem de dentro da palma e afinam suavemente até a ponta arredondada
   const fingers = [];
@@ -432,15 +430,45 @@ function forearmHandLocal(sx) {
     roundCone([inward * 0.018, -0.228, 0.042], [inward * 0.026, -0.258, 0.068], 0.025, 0.024),
     roundCone([inward * 0.026, -0.258, 0.068], [inward * 0.032, -0.286, 0.082], 0.024, 0.022),
   ], 0.008);
-  const hand = union([union([palm, union(fingers, 0.0015)], 0.03), thumb], 0.01); // vales nítidos entre os dedos
+  const hand = union([union([palm, union(fingers, 0.0015)], 0.02), thumb], 0.01); // vales nítidos entre os dedos
   // mão ~15% maior, escalada a partir do punho (y = −0.2)
   const S = 1.15;
   const scaled = custom(hand, () => 0);
   scaled.eval = (x, y, z) => hand.eval(x / S, (y + 0.2) / S - 0.2, z / S) * S;
   scaled.cy = (hand.cy + 0.2) * S - 0.2; scaled.br = hand.br * S;
-  // pulso: cone contínuo do antebraço até o centro da palma (transição sem saliência)
-  const wrist = roundCone([0, -0.19, 0], [inward * 0.004, -0.27, 0], 0.058, 0.066);
-  return union([forearm, wrist, scaled], 0.012);
+  // mão sobe 0.09 junto com o antebraço mais curto
+  const up = custom(scaled, () => 0);
+  up.eval = (x, y, z) => scaled.eval(x, y - 0.09, z);
+  up.cy = scaled.cy + 0.09;
+  return up;
+}
+
+// tubo de raio variável ao longo de uma polilinha (pontos no mundo): braço contínuo,
+// sem esferas nas juntas → nada de calombo no cotovelo. radius(u), u ∈ [0,1] no comprimento total.
+function tube(pts, radius, k = 0.015) {
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const len = Math.hypot(...ab);
+    segs.push({ a, ab, len, s0: total });
+    total += len;
+  }
+  const segNode = (sg) => {
+    const c = [sg.a[0] + sg.ab[0] / 2, sg.a[1] + sg.ab[1] / 2, sg.a[2] + sg.ab[2] / 2];
+    return {
+      cx: c[0], cy: c[1], cz: c[2], br: sg.len / 2 + 0.08,
+      lb(x, y, z) { return Math.hypot(x - this.cx, y - this.cy, z - this.cz) - this.br; },
+      eval(x, y, z) {
+        const px = x - sg.a[0], py = y - sg.a[1], pz = z - sg.a[2];
+        const t = Math.min(1, Math.max(0, (px * sg.ab[0] + py * sg.ab[1] + pz * sg.ab[2]) / (sg.len * sg.len)));
+        return Math.hypot(px - sg.ab[0] * t, py - sg.ab[1] * t, pz - sg.ab[2] * t) - radius((sg.s0 + t * sg.len) / total);
+      },
+    };
+  };
+  const nodes = segs.map(segNode);
+  return { nodes, all: union(nodes, k) };
 }
 
 function shoeField() {
@@ -513,7 +541,7 @@ export function createCharacterModel() {
 
   // estrela no peito esquerdo, apoiada na superfície do tronco
   {
-    const sx = 0.14, sy = 0.825; // peito, abaixo da ponta da gola (model sheet)
+    const sx = 0, sy = 0.79; // centro do peito, entre as pontas da gola
     const z = surfaceZ(torso, sx, sy, 0.5, 0);
     const e = 0.002;
     const n = new THREE.Vector3(
@@ -545,12 +573,28 @@ export function createCharacterModel() {
   root.add(pants);
   pants.bind(skeleton);
 
-  // ---- antebraços e mãos (rígidos no cotovelo, construídos no espaço local) ----
+  // ---- braços + mãos: uma malha só por braço (SkinnedMesh ombro → cotovelo), sem emenda no cotovelo ----
   for (const sx of [1, -1]) {
-    const geo = polygonize(forearmHandLocal(sx), { min: [-0.12, -0.45, -0.12], max: [0.12, 0.1, 0.14], cell: 0.0032, smooth: 2 });
-    const m = new THREE.Mesh(geo, mats.skin);
+    const sh = sx > 0 ? 'shoulderL' : 'shoulderR', el = sx > 0 ? 'elbowL' : 'elbowR';
+    const mS = boneMatrix(bones, sh), mE = boneMatrix(bones, el);
+    const at = (m, p) => new THREE.Vector3(...p).applyMatrix4(m).toArray();
+    // ombro → cotovelo → punho (dentro da palma): quase cilíndrico, afinando de leve,
+    // com um volume discreto no antebraço
+    const { nodes: [segU, segF], all: tubeArm } = tube(
+      [at(mS, [0, -0.08, 0]), at(mS, [0, -0.25, 0]), at(mE, [0, -0.15, 0])],
+      (u) => 0.066 - 0.017 * Math.pow(u, 1.4) + 0.0025 * Math.exp(-(((u - 0.68) / 0.14) ** 2)));
+    const hand = transform(handLocal(sx), mE);
+    const upper = segU, fore = union([segF, hand], 0.02);
+    const arm = union([tubeArm, hand], 0.02);
+    const x0 = sx > 0 ? 0.2 : -0.75, x1 = sx > 0 ? 0.75 : -0.2;
+    const geo = polygonize(arm, {
+      min: [x0, 0.25, -0.2], max: [x1, 1.3, 0.25], cell: 0.0032, smooth: 8,
+      weights: softWeights([[index[sh], upper], [index[el], fore]], 0.06),
+    });
+    const m = new THREE.SkinnedMesh(geo, mats.skin);
     m.name = sx > 0 ? 'armMeshL' : 'armMeshR';
-    bones[sx > 0 ? 'elbowL' : 'elbowR'].add(m);
+    root.add(m);
+    m.bind(skeleton);
   }
 
   // ---- tênis (rígidos nos pés; tornozelo em y = 0.16) ----
@@ -570,6 +614,8 @@ export function createCharacterModel() {
   const { eyes, mouthMeshes, brows } = buildHead(mats, bones.head);
 
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // pele dos braços: sem auto-sombra (evita a linha de sombra nas junções cotovelo/punho)
+  root.traverse((o) => { if (/^(upperArm|armMesh)/.test(o.name)) o.receiveShadow = false; });
   root.userData.bones = bones;
   root.userData.skeleton = skeleton;
   root.userData.eyes = eyes;
